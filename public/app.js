@@ -254,7 +254,7 @@ function renderScriptList(report) {
     title.textContent = `${index + 1}. ${item.title}`;
     const tags = document.createElement("p");
     tags.className = "muted";
-    tags.textContent = (item.sourceMix || []).join(" / ") || "跨平台";
+    tags.textContent = (item.sourceMix || []).join(" / ") || "中文互联网";
     titleWrap.append(title, tags);
 
     const button = document.createElement("button");

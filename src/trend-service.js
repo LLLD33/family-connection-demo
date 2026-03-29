@@ -1,10 +1,13 @@
-const SOURCE_ORDER = ["douyin", "bilibili", "zhihu", "xiaohongshu"];
+const SOURCE_ORDER = ["baidu", "weibo", "zhihu", "xiaohongshu", "sina", "ifeng", "cls"];
 
 export const SOURCE_LABELS = {
-  douyin: "抖音",
-  bilibili: "B站",
+  baidu: "百度热搜",
+  weibo: "微博热搜",
   zhihu: "知乎",
-  xiaohongshu: "小红书"
+  xiaohongshu: "小红书",
+  sina: "新浪新闻",
+  ifeng: "凤凰网",
+  cls: "财联社"
 };
 
 const DEFAULT_HEADERS = {
@@ -81,6 +84,20 @@ function isUsefulTopic(title) {
     "业务合作"
   ];
   return !blacklist.includes(title);
+}
+
+function isLikelyNewsHeadline(title) {
+  if (!isUsefulTopic(title)) return false;
+  if (/^(hao123|查看更多|点击查看更多实时热点|新闻中心首页_新浪网|将本页面保存为书签|您也可下载桌面快捷方式|启动Power on|36Kr创新咨询|VClub投资机构库)$/i.test(title)) return false;
+  if (/^(今天|昨天|刚刚)\s*\d{1,2}:\d{2}/.test(title)) return false;
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(title)) return false;
+  if (/^\d{6,}$/.test(title)) return false;
+  if (/^[\/\-\s]+$/.test(title)) return false;
+  if (/^(CCTV|新华社|财联社|新浪|凤凰|微博|百度|知乎)(国际时讯)?$/.test(title)) return false;
+  if (/(ICP备|公网安备|许可证|举报|下载|APP|广告合作|有害信息|营业执照|公司)/.test(title)) return false;
+  const chineseChars = countChineseChars(title);
+  if (chineseChars < 5) return false;
+  return true;
 }
 
 function countChineseChars(value) {
@@ -182,6 +199,47 @@ async function fetchBilibiliTopics(fetchImpl, limit) {
   };
 }
 
+async function fetchBaiduTopics(fetchImpl, limit) {
+  const html = await fetchText("https://top.baidu.com/board?tab=realtime", fetchImpl);
+  const visibleLines = extractVisibleLines(html).filter((line) => {
+    if (!isLikelyNewsHeadline(line)) return false;
+    if (/^\/\s*全部类型/.test(line)) return false;
+    if (line.length > 28 && /[，。,]|习近平总书记|面对新形势|真抓实干|务实功/.test(line)) return false;
+    return true;
+  });
+
+  const topics = dedupeTopics(
+    visibleLines
+      .slice(0, limit * 4)
+      .map((title, index) => buildTopic("baidu", index, title, `https://www.baidu.com/s?wd=${encodeURIComponent(title)}`))
+  ).slice(0, limit);
+
+  return {
+    source: "baidu",
+    ok: topics.length > 0,
+    count: topics.length,
+    message: topics.length ? "已抓到百度热搜标题" : "百度热搜页面可访问，但没有解析出标题",
+    topics
+  };
+}
+
+async function fetchWeiboTopics(fetchImpl, limit) {
+  const payload = await fetchJson("https://v1.nsuuu.com/api/weibohot", fetchImpl);
+  const list = Array.isArray(payload?.data) ? payload.data : [];
+  const topics = list
+    .map((item, index) => buildTopic("weibo", index, item.title, item.url || `https://s.weibo.com/weibo?q=${encodeURIComponent(item.title)}`))
+    .filter((item) => isLikelyNewsHeadline(item.title))
+    .slice(0, limit);
+
+  return {
+    source: "weibo",
+    ok: topics.length > 0,
+    count: topics.length,
+    message: topics.length ? "已抓到微博热搜标题" : "微博热搜接口可访问，但没有解析出标题",
+    topics
+  };
+}
+
 function extractDouyinCandidateTitles(html, limit) {
   const rawMatches = [];
   const patterns = [
@@ -267,6 +325,88 @@ async function fetchZhihuTopics(fetchImpl, limit) {
   };
 }
 
+function extractSinaCandidateTitles(html, limit) {
+  const visibleLines = extractVisibleLines(html).filter((line) => {
+    if (!isLikelyNewsHeadline(line)) return false;
+    if (/^(点击查看更多实时热点|新闻中心首页_新浪网|将本页面保存为书签)/.test(line)) return false;
+    if (/客户端$/.test(line)) return false;
+    return true;
+  });
+
+  return dedupeTopics(
+    visibleLines
+      .slice(0, limit * 5)
+      .map((title, index) => buildTopic("sina", index, title, `https://search.sina.com.cn/?q=${encodeURIComponent(title)}`))
+  ).slice(0, limit);
+}
+
+async function fetchSinaTopics(fetchImpl, limit) {
+  const html = await fetchText("https://news.sina.com.cn/", fetchImpl);
+  const topics = extractSinaCandidateTitles(html, limit);
+  return {
+    source: "sina",
+    ok: topics.length > 0,
+    count: topics.length,
+    message: topics.length ? "已抓到新浪新闻热标题" : "新浪新闻页面可访问，但没有解析出标题",
+    topics
+  };
+}
+
+function extractIfengCandidateTitles(html, limit) {
+  const visibleLines = extractVisibleLines(html).filter((line) => {
+    if (!isLikelyNewsHeadline(line)) return false;
+    if (/^(今天|昨天)/.test(line)) return false;
+    if (/^(资讯_凤凰网|有中华酒就有年味)/.test(line)) return false;
+    return true;
+  });
+
+  return dedupeTopics(
+    visibleLines
+      .slice(0, limit * 5)
+      .map((title, index) => buildTopic("ifeng", index, title, `https://search.ifeng.com/sofeng/search.action?q=${encodeURIComponent(title)}`))
+  ).slice(0, limit);
+}
+
+async function fetchIfengTopics(fetchImpl, limit) {
+  const html = await fetchText("https://news.ifeng.com/", fetchImpl);
+  const topics = extractIfengCandidateTitles(html, limit);
+  return {
+    source: "ifeng",
+    ok: topics.length > 0,
+    count: topics.length,
+    message: topics.length ? "已抓到凤凰网热标题" : "凤凰网页面可访问，但没有解析出标题",
+    topics
+  };
+}
+
+function extractClsCandidateTitles(html, limit) {
+  const visibleLines = extractVisibleLines(html).filter((line) => {
+    if (!isLikelyNewsHeadline(line)) return false;
+    if (/^(财联社A股24小时电报|解锁直达)/.test(line)) return false;
+    if (/^电报持续更新中$/.test(line)) return false;
+    if (/^[、，,]/.test(line)) return false;
+    return true;
+  });
+
+  return dedupeTopics(
+    visibleLines
+      .slice(0, limit * 5)
+      .map((title, index) => buildTopic("cls", index, title.replace(/^【|】$/g, ""), `https://www.cls.cn/searchPage?keyword=${encodeURIComponent(title)}`))
+  ).slice(0, limit);
+}
+
+async function fetchClsTopics(fetchImpl, limit) {
+  const html = await fetchText("https://www.cls.cn/telegraph", fetchImpl);
+  const topics = extractClsCandidateTitles(html, limit);
+  return {
+    source: "cls",
+    ok: topics.length > 0,
+    count: topics.length,
+    message: topics.length ? "已抓到财联社电报热点" : "财联社页面可访问，但没有解析出标题",
+    topics
+  };
+}
+
 function extractXiaohongshuCandidateTitles(html, limit) {
   const visibleLines = extractVisibleLines(html).filter((line) => {
     if (/^(小红书|推荐|穿搭|美食|彩妆|影视|职场|情感|家居|游戏|旅行|健身)$/.test(line)) return false;
@@ -312,10 +452,13 @@ async function settleSource(source, fetcher) {
 export async function fetchTrendSnapshot(fetchImpl, settings) {
   const limit = Number(settings?.trends?.sourceLimit || 6);
   const results = await Promise.all([
-    settleSource("douyin", () => fetchDouyinTopics(fetchImpl, limit)),
-    settleSource("bilibili", () => fetchBilibiliTopics(fetchImpl, limit)),
+    settleSource("baidu", () => fetchBaiduTopics(fetchImpl, limit)),
+    settleSource("weibo", () => fetchWeiboTopics(fetchImpl, limit)),
     settleSource("zhihu", () => fetchZhihuTopics(fetchImpl, limit)),
-    settleSource("xiaohongshu", () => fetchXiaohongshuTopics(fetchImpl, limit))
+    settleSource("xiaohongshu", () => fetchXiaohongshuTopics(fetchImpl, limit)),
+    settleSource("sina", () => fetchSinaTopics(fetchImpl, limit)),
+    settleSource("ifeng", () => fetchIfengTopics(fetchImpl, limit)),
+    settleSource("cls", () => fetchClsTopics(fetchImpl, limit))
   ]);
 
   const sourceTopics = {};
@@ -395,7 +538,7 @@ function buildFallbackScripts(flatTopics, settings) {
       title: topic.title,
       hotReason: `${topic.sourceLabel} 排名前列，这类题目既有新鲜感，也容易顺手问到父母自己的看法。`,
       hook: `今天我刷到一个挺火的：${topic.title}`,
-      spokenScript: `今天四个平台里我最想先和你们聊的是“${topic.title}”。它现在在 ${topic.sourceLabel} 上热度很高，我看下来最大的感觉不是单纯热闹，而是它特别容易让人代入自己的生活和判断。我要是跟你们打电话，就会先用两三句把来龙去脉讲清楚，再顺手问一句“你们怎么看这件事”，这样话题就很自然地接起来了。`,
+      spokenScript: `今天中文互联网里我最想先和你们聊的是“${topic.title}”。它现在在 ${topic.sourceLabel} 上热度很高，我看下来最大的感觉不是单纯热闹，而是它特别容易让人代入自己的生活和判断。我要是跟你们打电话，就会先用两三句把来龙去脉讲清楚，再顺手问一句“你们怎么看这件事”，这样话题就很自然地接起来了。`,
       conversationStarter: buildConversationStarter(topic.title, category),
       parentAngle: buildParentAngle(category),
       sourceMix: [topic.sourceLabel],
@@ -442,7 +585,7 @@ function buildAiInput(snapshot, settings) {
 
   return [
     `用户画像：${settings.profile.name}，在 ${settings.profile.city} 工作，希望和在 ${settings.parents.hometown} 的父母聊热点新闻。`,
-    "任务：从下面四个平台热点里，挑出 3 个最值得聊、最容易展开、同时适合转述给父母的话题。",
+    "任务：从下面这些中文互联网热点里，挑出 3 个最值得聊、最容易展开、同时适合转述给父母的话题。",
     "输出要求：返回严格 JSON，不要 markdown 代码块，不要解释。",
     `字段格式：{"summary":"一句总评","scripts":[{"title":"","hotReason":"","hook":"","spokenScript":"","conversationStarter":"","parentAngle":"","sourceMix":["抖音"],"sourceUrls":["https://..."]}]}`,
     "spokenScript 请写成抖音短视频口播文案，中文，120 到 180 字，口语化、有节奏、像真人在讲。",
@@ -625,7 +768,7 @@ export async function generateTrendReport(fetchImpl, settings, options = {}) {
   const trigger = options.trigger || "manual";
   const scriptCount = Number(settings?.trends?.scriptCount || 3);
   const aiOptions = resolveAiOptions(settings, options.aiConfig || {});
-  const noTopicsMessage = "这一轮没有从四个平台抓到可用标题，可能是源站限流或地区访问受限。";
+  const noTopicsMessage = "这一轮没有从中文互联网热榜池抓到可用标题，可能是源站限流或地区访问受限。";
 
   let ai;
   if (aiOptions.provider === "google") {
