@@ -233,6 +233,63 @@ function renderSourceBoard(report) {
   });
 }
 
+function renderTopicBuckets(report) {
+  const bucketBoard = document.getElementById("bucketBoard");
+  if (!bucketBoard) return;
+  bucketBoard.innerHTML = "";
+
+  if (!report) {
+    bucketBoard.innerHTML = '<div class="history-item"><p>还没有分桶热点，刷新后会按时政、军事、经济、社会自动整理。</p></div>';
+    return;
+  }
+
+  const buckets = report.allowedBuckets || [];
+  buckets.forEach((bucket) => {
+    const card = document.createElement("article");
+    card.className = "source-card";
+
+    const header = document.createElement("div");
+    header.className = "source-card-header";
+
+    const title = document.createElement("h4");
+    title.textContent = bucket.label;
+
+    const items = report.topicBuckets?.[bucket.key] || [];
+    const badge = document.createElement("span");
+    badge.className = `pill ${items.length ? "ok" : "warn"}`;
+    badge.textContent = `${items.length} 条`;
+
+    header.append(title, badge);
+
+    const note = document.createElement("p");
+    note.className = "muted";
+    note.textContent = items.length ? `已筛出 ${bucket.label} 向的可聊热点` : `这一轮没有保留下可聊的${bucket.label}热点`;
+
+    const list = document.createElement("div");
+    list.className = "source-topic-list";
+
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "history-item";
+      empty.textContent = "当前没有适合保留的话题";
+      list.appendChild(empty);
+    } else {
+      items.slice(0, 6).forEach((topic, index) => {
+        const item = document.createElement("a");
+        item.className = "source-topic-item";
+        item.href = topic.url;
+        item.target = "_blank";
+        item.rel = "noreferrer";
+        item.textContent = `#${index + 1} ${topic.title}`;
+        list.appendChild(item);
+      });
+    }
+
+    card.append(header, note, list);
+    bucketBoard.appendChild(card);
+  });
+}
+
 function renderScriptList(report) {
   const scriptList = document.getElementById("scriptList");
   scriptList.innerHTML = "";
@@ -345,20 +402,22 @@ function renderTrendPanel() {
       ? `${getAiProviderLabel(state.settings)} 已就绪，默认模型 ${state.settings.openai.model}`
       : `${getAiProviderLabel(state.settings)} 还没配置 API Key，首次生成会先用本地模板保底。`;
     renderSourceBoard(null);
+    renderTopicBuckets(null);
     renderScriptList(null);
     renderTrendHistory();
     return;
   }
 
-  trendMetaTag.textContent = `${formatAiModeLabel(report.ai)} · ${report.topicCount} 条候选`;
+  trendMetaTag.textContent = `${formatAiModeLabel(report.ai)} · ${report.topicCount} 条候选 · ${report.bucketCount || 0} 个分桶`;
   trendSummary.textContent = report.summary || "本轮热点已经整理完成。";
   heroTitle.textContent = "这一轮最值得和爸妈聊的 3 个热点已经备好";
-  heroSummary.textContent = `${report.summary || "热点已整理完成。"} 这轮共抓到 ${report.topicCount} 个候选话题，建议你优先挑一条最轻松的先开口。`;
+  heroSummary.textContent = `${report.summary || "热点已整理完成。"} 这轮共抓到 ${report.topicCount} 个候选话题，并按时政、军事、经济、社会做了过滤和分桶，建议你优先挑一条最轻松的先开口。`;
   aiModeStatus.textContent = report.ai.mode !== "fallback"
     ? `当前用 ${formatAiModeLabel(report.ai)} 生成，${report.ai.message}`
     : `当前是本地保底生成，原因：${report.ai.message}`;
 
   renderSourceBoard(report);
+  renderTopicBuckets(report);
   renderScriptList(report);
   renderTrendHistory();
 }

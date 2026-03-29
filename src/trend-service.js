@@ -127,6 +127,73 @@ function isLikelyXiaohongshuHeadline(title) {
   return hasHeadlinePunctuation || hasEnoughBody;
 }
 
+const PUBLIC_BUCKETS = [
+  { key: "politics", label: "时政" },
+  { key: "military", label: "军事" },
+  { key: "economy", label: "经济" },
+  { key: "society", label: "社会" }
+];
+
+const EXCLUDED_TOPIC_PATTERNS = [
+  /(明星|娱[乐樂]|综艺|偶像|饭圈|粉丝|演唱会|剧组|恋情|离婚|婚礼|塌房|出轨|流量|网红|博主|直播间|直播带货)/i,
+  /(擦边|大尺度|性感|私密|约会|撩人|颜值|美妆|妆容|穿搭|ootd|减肥|瘦身|塑形|探店|种草|开箱|测评|好物|教程|同款)/i,
+  /(广告|推广|上新|限时|折扣|优惠|品牌|购买|下单|旗舰店|门店|套餐|券后|报名|训练营|私教|酒店|民宿|旅拍|写真)/i,
+  /(拍照|写真|发型|美甲|护肤|口红|香水|健身打卡|恋爱脑|脱单|cp|男友|女友|桃花|追星|影视|票房|新剧|首映)/i
+];
+
+function shouldExcludeTopic(title) {
+  return EXCLUDED_TOPIC_PATTERNS.some((pattern) => pattern.test(title));
+}
+
+function classifyPublicTopic(title) {
+  const bucketMatchers = [
+    {
+      key: "military",
+      matches:
+        /(军方|军队|部队|海军|空军|陆军|火箭军|导弹|战机|军演|防务|国防|舰艇|航母|战舰|袭击|冲突|停火|战争|无人机|兵棋|北约|军售)/i
+    },
+    {
+      key: "politics",
+      matches:
+        /(中共中央|国务院|外交部|国常会|总书记|主席|总理|人大|政协|审议|政策|新规|方案|条例|通报|发布会|部长|副总理|地方政府|两会|民生工程|反腐|外交|领事)/i
+    },
+    {
+      key: "economy",
+      matches:
+        /(经济|金融|股市|楼市|房价|汇率|利率|关税|出口|外贸|制造业|消费|财政|税收|投资|产业链|供应链|通胀|银行|券商|基金|人民币|黄金|油价|电商|企业|财报|就业|工资|内存条|芯片|新能源|车企|平台经济)/i
+    },
+    {
+      key: "society",
+      matches:
+        /(社会|民生|教育|医疗|医保|养老|交通|地震|暴雨|台风|洪水|火灾|事故|救援|高考|学校|医院|治安|法院|检察院|警方|地铁|铁路|高速|食品安全|大熊猫|文旅|景区|社区|基层|结婚登记|居民|用电|用水)/i
+    }
+  ];
+  return bucketMatchers.find((item) => item.matches.test(title))?.key || null;
+}
+
+function filterTopicItems(items) {
+  return dedupeTopics(
+    items.filter((item) => {
+      const title = item?.title || "";
+      return isUsefulTopic(title) && !shouldExcludeTopic(title) && Boolean(classifyPublicTopic(title));
+    })
+  );
+}
+
+function buildTopicBuckets(items) {
+  const buckets = Object.fromEntries(PUBLIC_BUCKETS.map((bucket) => [bucket.key, []]));
+  items.forEach((item) => {
+    const bucketKey = classifyPublicTopic(item.title);
+    if (!bucketKey) return;
+    buckets[bucketKey].push({
+      ...item,
+      bucketKey,
+      bucketLabel: PUBLIC_BUCKETS.find((bucket) => bucket.key === bucketKey)?.label || bucketKey
+    });
+  });
+  return buckets;
+}
+
 function dedupeTopics(items) {
   const seen = new Set();
   return items.filter((item) => {
@@ -472,46 +539,41 @@ export async function fetchTrendSnapshot(fetchImpl, settings) {
       message: "未执行",
       topics: []
     };
-    sourceTopics[source] = result.topics;
+    const filteredTopics = filterTopicItems(result.topics || []);
+    const filteredAll = !filteredTopics.length && (result.topics || []).length > 0;
+    sourceTopics[source] = filteredTopics;
     sourceStatus.push({
       source,
       sourceLabel: SOURCE_LABELS[source] || source,
-      ok: result.ok,
-      count: result.count,
-      message: result.message
+      ok: filteredTopics.length > 0,
+      count: filteredTopics.length,
+      message: filteredAll ? "已过滤为娱乐八卦、擦边或广告感内容" : result.message
     });
   });
 
-  const flatTopics = dedupeTopics(
-    SOURCE_ORDER.flatMap((source) => sourceTopics[source] || []).filter((item) => isUsefulTopic(item.title))
-  );
+  const flatTopics = filterTopicItems(SOURCE_ORDER.flatMap((source) => sourceTopics[source] || []));
+  const topicBuckets = buildTopicBuckets(flatTopics);
 
   return {
     createdAt: new Date().toISOString(),
     sourceStatus,
     sourceTopics,
-    flatTopics
+    flatTopics,
+    topicBuckets,
+    allowedBuckets: PUBLIC_BUCKETS
   };
 }
 
 function classifyTopic(title) {
-  const categories = [
-    { type: "sports", matches: /(比赛|冠军|球队|球员|奥运|足球|篮球|马拉松|世界杯)/ },
-    { type: "tech", matches: /(AI|人工智能|机器人|手机|芯片|汽车|特斯拉|苹果|华为|小米|科技|模型)/i },
-    { type: "society", matches: /(警方|官方|政策|高铁|学校|医院|社会|安全|司机|地震|天气|航班)/ },
-    { type: "culture", matches: /(电影|电视剧|综艺|歌手|演唱会|演员|动漫|游戏|音乐|舞台)/ },
-    { type: "lifestyle", matches: /(美食|旅游|穿搭|做饭|减肥|运动|宠物|家庭|日常|春天|樱花|露营)/ }
-  ];
-  return categories.find((item) => item.matches.test(title))?.type || "general";
+  return classifyPublicTopic(title) || "society";
 }
 
 function buildParentAngle(category) {
   const map = {
-    sports: "可以顺带聊聊他们年轻时最爱看的比赛，或者最近有没有坚持运动。",
-    tech: "适合问问他们对 AI、手机、汽车这些新变化的看法，让他们有参与感。",
-    society: "可以从“你们那边有人聊这个吗”切入，听他们的现实观察。",
-    culture: "适合问他们年轻时最爱看的电影、歌手或节目，话题很容易延展。",
-    lifestyle: "可以延伸到吃饭、散步、旅游、朋友聚会这些轻松日常。",
+    politics: "可以多聊政策变化怎么影响普通人生活，也适合顺带问问爸妈对这类大事怎么看。",
+    military: "可以从国家安全、国际局势切入，聊聊长辈平时最关注的军情和世界变化。",
+    economy: "可以把重点放在物价、就业、收入、消费这些爸妈更有感的现实问题上。",
+    society: "适合从民生、教育、医疗、交通、安全这些身边话题切入，更容易自然接住。",
     general: "先轻松复述热点，再问他们“你们怎么看”，不要一上来太严肃。"
   };
   return map[category];
@@ -519,14 +581,13 @@ function buildParentAngle(category) {
 
 function buildConversationStarter(title, category) {
   const prefix = {
-    sports: "你们最近有刷到这个比赛吗？",
-    tech: "你们会不会觉得现在这些新技术变化太快了？",
-    society: "这件事你们那边有人在聊吗？",
-    culture: "这个人/节目你们会不会也认识？",
-    lifestyle: "这件事放到我们自己生活里，你们会怎么选？",
+    politics: "我刚看到一条时政热点，第一反应就想和你们聊聊：",
+    military: "今天刷到一条军事新闻，我觉得你们可能也会关心：",
+    economy: "今天看到一条经济热点，感觉和普通人的日子挺相关：",
+    society: "我刚看到一条社会热点，挺适合咱们聊两句：",
     general: "这个热点你们有刷到吗？"
   }[category];
-  return `${prefix} 我刚看到“${title}”，第一反应就想听听你们的看法。`;
+  return `${prefix}${title}`;
 }
 
 function buildFallbackScripts(flatTopics, settings) {
@@ -583,6 +644,16 @@ function buildAiInput(snapshot, settings) {
     lines.push("");
   });
 
+  lines.push("分桶后的可聊热点：");
+  (snapshot.allowedBuckets || []).forEach((bucket) => {
+    const items = snapshot.topicBuckets?.[bucket.key] || [];
+    lines.push(`${bucket.label}: ${items.length ? `${items.length} 条` : "0 条"}`);
+    items.slice(0, 6).forEach((topic) => {
+      lines.push(`- [${bucket.label}] ${topic.title}`);
+    });
+    lines.push("");
+  });
+
   return [
     `用户画像：${settings.profile.name}，在 ${settings.profile.city} 工作，希望和在 ${settings.parents.hometown} 的父母聊热点新闻。`,
     "任务：从下面这些中文互联网热点里，挑出 3 个最值得聊、最容易展开、同时适合转述给父母的话题。",
@@ -591,6 +662,7 @@ function buildAiInput(snapshot, settings) {
     "spokenScript 请写成抖音短视频口播文案，中文，120 到 180 字，口语化、有节奏、像真人在讲。",
     "conversationStarter 要像发给父母的开场白。",
     "parentAngle 要说明为什么这个点适合和父母聊。",
+    "只从时政、军事、经济、社会四个分桶里选题，自动避开娱乐八卦、擦边和广告感内容。",
     "不要选过于血腥、色情、明显未核实谣言的话题；如果热点里存在争议，请用克制、中性方式转述。",
     "",
     ...lines
@@ -872,8 +944,11 @@ export async function generateTrendReport(fetchImpl, settings, options = {}) {
     summary: ai.summary,
     sourceStatus: snapshot.sourceStatus,
     sourceTopics: snapshot.sourceTopics,
+    topicBuckets: snapshot.topicBuckets,
+    allowedBuckets: snapshot.allowedBuckets,
     scripts: ai.scripts,
-    topicCount: snapshot.flatTopics.length
+    topicCount: snapshot.flatTopics.length,
+    bucketCount: Object.values(snapshot.topicBuckets || {}).reduce((sum, items) => sum + (items.length ? 1 : 0), 0)
   };
 }
 
