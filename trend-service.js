@@ -83,6 +83,33 @@ function isUsefulTopic(title) {
   return !blacklist.includes(title);
 }
 
+function countChineseChars(value) {
+  return (String(value || "").match(/[\u3400-\u9fff]/g) || []).length;
+}
+
+function isLikelyXiaohongshuHeadline(title) {
+  if (!isUsefulTopic(title)) return false;
+  if (/^(小红书\s*-\s*你的生活兴趣社区|HOME_FEED_LAYOUT_PLACEHOLDER)$/i.test(title)) return false;
+  if (
+    /(ICP备|公网安备|经营许可证|资格证书|举报电话|举报中心|举报专区|经营者信息|个性化推荐算法|有限公司|地址：|电话：|备案|医疗器械|增值电信业务|互联网药品信息服务)/.test(
+      title
+    )
+  ) {
+    return false;
+  }
+  if (/(大尺度|色情|成人视频)/i.test(title)) return false;
+
+  const chineseChars = countChineseChars(title);
+  const hasHeadlinePunctuation = /[，。！？!?~～…｜|：:（）()【】《》]/.test(title);
+  const looksTooShortLikeUsername = !hasHeadlinePunctuation && title.length < 10 && chineseChars <= 6;
+  const hasEnoughBody = title.length >= 10 || chineseChars >= 8;
+
+  if (chineseChars < 4) return false;
+  if (looksTooShortLikeUsername) return false;
+
+  return hasHeadlinePunctuation || hasEnoughBody;
+}
+
 function dedupeTopics(items) {
   const seen = new Set();
   return items.filter((item) => {
@@ -242,11 +269,9 @@ async function fetchZhihuTopics(fetchImpl, limit) {
 
 function extractXiaohongshuCandidateTitles(html, limit) {
   const visibleLines = extractVisibleLines(html).filter((line) => {
-    if (!isUsefulTopic(line)) return false;
     if (/^(小红书|推荐|穿搭|美食|彩妆|影视|职场|情感|家居|游戏|旅行|健身)$/.test(line)) return false;
     if (/^(\d+(\.\d+)?万?|[\d.]+w)$/i.test(line)) return false;
-    if (/^(©|地址：|电话：|沪ICP备|营业执照|个性化推荐算法)/.test(line)) return false;
-    return true;
+    return isLikelyXiaohongshuHeadline(line);
   });
 
   return dedupeTopics(
