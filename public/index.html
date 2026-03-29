@@ -269,6 +269,44 @@
     </div>
 
     <div id="toast" class="toast hidden"></div>
+
+    <div id="topicModal" class="modal-shell hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <section class="topic-modal" role="dialog" aria-modal="true" aria-labelledby="topicModalTitle">
+        <button id="closeTopicModalBtn" class="modal-close" type="button" aria-label="关闭">×</button>
+        <div class="topic-modal-actions">
+          <button id="saveTopicBtn" class="ghost-button" type="button">收藏</button>
+          <button id="moreTopicBtn" class="ghost-button" type="button">其他</button>
+          <a id="readOriginalLink" class="ghost-button modal-link-button" href="#" target="_blank" rel="noreferrer">阅读原文</a>
+        </div>
+        <div class="topic-modal-content">
+          <h3 id="topicModalTitle"></h3>
+          <p id="topicModalSubtitle" class="muted"></p>
+          <p id="topicModalMeta" class="muted"></p>
+        </div>
+        <div id="topicInterpretationPanel" class="topic-interpretation hidden">
+          <p id="topicInterpretationStatus" class="muted"></p>
+          <p id="topicInterpretationSummary" class="body-copy"></p>
+          <div class="topic-interpretation-block">
+            <h4>为什么值得看</h4>
+            <p id="topicInterpretationWhy"></p>
+          </div>
+          <div class="topic-interpretation-block">
+            <h4>适合和父母聊的切口</h4>
+            <ul id="topicInterpretationPoints" class="checklist"></ul>
+          </div>
+          <div class="topic-interpretation-block">
+            <h4>聊天角度</h4>
+            <p id="topicInterpretationFamily"></p>
+          </div>
+          <div class="topic-interpretation-block">
+            <h4>风险提醒</h4>
+            <p id="topicInterpretationRisk"></p>
+          </div>
+        </div>
+        <button id="interpretTopicBtn" class="interpret-button" type="button">AI 智能解读</button>
+      </section>
+    </div>
     <script src="/app.js"></script>
   </body>
 </html>

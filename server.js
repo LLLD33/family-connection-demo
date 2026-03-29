@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
 const { defaultSettings, defaultHistory } = require("./defaults");
-const { generateTrendReport, buildTrendTelegramMessage } = require("./trend-service");
+const { generateTrendReport, buildTrendTelegramMessage, interpretTopic } = require("./trend-service");
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 3000);
@@ -500,6 +500,28 @@ const server = http.createServer(async (req, res) => {
         report,
         history,
         telegram
+      });
+    }
+
+    if (req.method === "POST" && pathname === "/api/topics/interpret") {
+      const settings = getSettings();
+      const body = await parseBody(req);
+      const interpretation = await interpretTopic(
+        fetch,
+        settings,
+        {
+          title: body.title,
+          source: body.source,
+          sourceLabel: body.sourceLabel,
+          url: body.url
+        },
+        {
+          aiConfig: resolveAiConfig(settings)
+        }
+      );
+      return sendJson(res, 200, {
+        ok: true,
+        interpretation
       });
     }
 

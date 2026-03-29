@@ -703,6 +703,168 @@ function extractJsonObject(rawText) {
   return JSON.parse(rawText.slice(start, end + 1));
 }
 
+function buildInterpretationPrompt(topic, settings) {
+  return [
+    `用户在 ${settings.profile.city} 工作，想把热点转述给在 ${settings.parents.hometown} 的父母。`,
+    "请对下面这个中文热点做实时智能解读，语气克制、易懂、适合家庭聊天。",
+    "返回严格 JSON，不要 markdown 代码块，不要额外解释。",
+    '字段格式：{"summary":"","whyHot":"","talkingPoints":["","",""],"familyAngle":"","riskNote":""}',
+    "summary 用 80 到 140 字概括这条热点在说什么。",
+    "whyHot 说明为什么它现在值得关注。",
+    "talkingPoints 给 3 条简洁切口，每条 18 到 40 字。",
+    "familyAngle 说明怎么把它聊给父母听，务必自然。",
+    "riskNote 说明这条内容是否可能有标题党、信息不完整或仍在发展中，保持中性。",
+    "不要夸张，不要写成营销文案，不要编造细节。",
+    `标题：${topic.title}`,
+    `来源：${topic.sourceLabel || topic.source || "中文互联网"}`,
+    `链接：${topic.url || "无"}`
+  ].join("\n");
+}
+
+function buildFallbackInterpretation(topic) {
+  const bucket = classifyPublicTopic(topic.title);
+  const bucketLabel = PUBLIC_BUCKETS.find((item) => item.key === bucket)?.label || "公共议题";
+  return {
+    ok: false,
+    mode: "fallback",
+    provider: "fallback",
+    providerLabel: "本地保底",
+    model: "fallback",
+    summary: `这条热点大概率属于${bucketLabel}方向，目前系统先根据标题做保守解读，适合先当作聊天引子。`,
+    whyHot: "它能进入当前热点池，说明这件事在中文互联网里有一定讨论度，而且和公共生活有连接。",
+    talkingPoints: [
+      `先问爸妈有没有刷到“${topic.title}”`,
+      "再用一两句复述标题，不急着下判断",
+      "最后顺带问这事会不会影响普通人生活"
+    ],
+    familyAngle: "先轻松复述，再问他们怎么看，不需要一上来讲很深。",
+    riskNote: "当前是按标题做的保底解读，细节可能仍在发展，最好点原文再确认。",
+    message: "已使用本地模板保底解读"
+  };
+}
+
+async function generateInterpretationWithOpenAI(fetchImpl, settings, topic, apiKey) {
+  const model = settings?.openai?.model || "gpt-5.4";
+  const reasoningEffort = settings?.openai?.reasoningEffort || "medium";
+  const response = await fetchImpl("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      reasoning: { effort: reasoningEffort },
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: buildInterpretationPrompt(topic, settings) }]
+        }
+      ],
+      max_output_tokens: 1200
+    })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OpenAI 请求失败：HTTP ${response.status} ${detail}`);
+  }
+
+  const payload = await response.json();
+  const parsed = extractJsonObject(extractResponseText(payload));
+  return {
+    ok: true,
+    mode: "openai",
+    provider: "openai",
+    providerLabel: "OpenAI",
+    model,
+    summary: normalizeText(parsed?.summary || ""),
+    whyHot: normalizeText(parsed?.whyHot || ""),
+    talkingPoints: Array.isArray(parsed?.talkingPoints) ? parsed.talkingPoints.map((item) => normalizeText(item)).filter(Boolean) : [],
+    familyAngle: normalizeText(parsed?.familyAngle || ""),
+    riskNote: normalizeText(parsed?.riskNote || ""),
+    message: "已用 OpenAI 生成实时解读"
+  };
+}
+
+async function generateInterpretationWithGoogleGemma(fetchImpl, settings, topic, apiKey, model) {
+  const response = await fetchImpl(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": apiKey
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: buildInterpretationPrompt(topic, settings) }]
+          }
+        ],
+        generationConfig: {
+          maxOutputTokens: 1200
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Google Gemma 请求失败：HTTP ${response.status} ${detail}`);
+  }
+
+  const payload = await response.json();
+  const rawText = extractGeminiText(payload);
+  if (!rawText) {
+    throw new Error("Google Gemma 没有返回可解析内容");
+  }
+  const parsed = extractJsonObject(rawText);
+  return {
+    ok: true,
+    mode: "google",
+    provider: "google",
+    providerLabel: "Google Gemma",
+    model,
+    summary: normalizeText(parsed?.summary || ""),
+    whyHot: normalizeText(parsed?.whyHot || ""),
+    talkingPoints: Array.isArray(parsed?.talkingPoints) ? parsed.talkingPoints.map((item) => normalizeText(item)).filter(Boolean) : [],
+    familyAngle: normalizeText(parsed?.familyAngle || ""),
+    riskNote: normalizeText(parsed?.riskNote || ""),
+    message: "已用 Google Gemma 生成实时解读"
+  };
+}
+
+async function interpretTopic(fetchImpl, settings, topic, options = {}) {
+  const aiOptions = resolveAiOptions(settings, options.aiConfig || {});
+  const normalizedTopic = {
+    title: normalizeTopicTitle(topic?.title || ""),
+    source: normalizeText(topic?.source || ""),
+    sourceLabel: normalizeText(topic?.sourceLabel || topic?.source || ""),
+    url: normalizeText(topic?.url || "")
+  };
+
+  if (!normalizedTopic.title) {
+    throw new Error("缺少标题，无法解读");
+  }
+
+  try {
+    if (aiOptions.provider === "google" && aiOptions.googleApiKey) {
+      return await generateInterpretationWithGoogleGemma(fetchImpl, settings, normalizedTopic, aiOptions.googleApiKey, aiOptions.model);
+    }
+    if (aiOptions.provider === "openai" && aiOptions.openAiApiKey) {
+      return await generateInterpretationWithOpenAI(fetchImpl, settings, normalizedTopic, aiOptions.openAiApiKey);
+    }
+    const fallback = buildFallbackInterpretation(normalizedTopic);
+    fallback.message = aiOptions.provider === "google" ? "未配置 GOOGLE_API_KEY，已使用本地模板保底解读" : "未配置 OPENAI_API_KEY，已使用本地模板保底解读";
+    return fallback;
+  } catch (error) {
+    const fallback = buildFallbackInterpretation(normalizedTopic);
+    fallback.message = error.message || fallback.message;
+    return fallback;
+  }
+}
+
 async function generateScriptsWithOpenAI(fetchImpl, settings, snapshot, apiKey) {
   const model = settings?.openai?.model || "gpt-5.4";
   const reasoningEffort = settings?.openai?.reasoningEffort || "medium";
@@ -980,5 +1142,6 @@ module.exports = {
   SOURCE_LABELS,
   fetchTrendSnapshot,
   generateTrendReport,
-  buildTrendTelegramMessage
+  buildTrendTelegramMessage,
+  interpretTopic
 };

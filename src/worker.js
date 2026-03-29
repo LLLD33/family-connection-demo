@@ -1,5 +1,5 @@
 import { defaultHistory, defaultSettings } from "./defaults.js";
-import { buildTrendTelegramMessage, generateTrendReport } from "./trend-service.js";
+import { buildTrendTelegramMessage, generateTrendReport, interpretTopic } from "./trend-service.js";
 
 const SETTINGS_KEY = "settings";
 const HISTORY_KEY = "history";
@@ -418,6 +418,27 @@ async function handleApi(request, env) {
       report,
       history: trendHistory,
       telegram
+    });
+  }
+
+  if (request.method === "POST" && pathname === "/api/topics/interpret") {
+    const body = await request.json();
+    const interpretation = await interpretTopic(
+      fetch,
+      settings,
+      {
+        title: body.title,
+        source: body.source,
+        sourceLabel: body.sourceLabel,
+        url: body.url
+      },
+      {
+        aiConfig: resolveAiConfig(settings, env)
+      }
+    );
+    return jsonResponse({
+      ok: true,
+      interpretation
     });
   }
 

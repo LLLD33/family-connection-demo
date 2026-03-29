@@ -4,7 +4,8 @@ const state = {
   history: [],
   deliveryHistory: [],
   latestTrendReport: null,
-  trendHistory: []
+  trendHistory: [],
+  selectedTopic: null
 };
 
 async function request(url, options = {}) {
@@ -224,6 +225,10 @@ function renderSourceBoard(report) {
         item.target = "_blank";
         item.rel = "noreferrer";
         item.textContent = `#${topic.rank} ${topic.title}`;
+        item.addEventListener("click", (event) => {
+          event.preventDefault();
+          openTopicModal(topic);
+        });
         list.appendChild(item);
       });
     }
@@ -281,6 +286,10 @@ function renderTopicBuckets(report) {
         item.target = "_blank";
         item.rel = "noreferrer";
         item.textContent = `#${index + 1} ${topic.title}`;
+        item.addEventListener("click", (event) => {
+          event.preventDefault();
+          openTopicModal(topic);
+        });
         list.appendChild(item);
       });
     }
@@ -288,6 +297,67 @@ function renderTopicBuckets(report) {
     card.append(header, note, list);
     bucketBoard.appendChild(card);
   });
+}
+
+function resetInterpretationPanel() {
+  document.getElementById("topicInterpretationPanel").classList.add("hidden");
+  document.getElementById("topicInterpretationStatus").textContent = "点击下方按钮后，会用当前 AI 模型实时生成解读。";
+  document.getElementById("topicInterpretationSummary").textContent = "";
+  document.getElementById("topicInterpretationWhy").textContent = "";
+  document.getElementById("topicInterpretationFamily").textContent = "";
+  document.getElementById("topicInterpretationRisk").textContent = "";
+  document.getElementById("topicInterpretationPoints").innerHTML = "";
+}
+
+function openTopicModal(topic) {
+  state.selectedTopic = topic;
+  document.getElementById("topicModalTitle").textContent = topic.title || "";
+  document.getElementById("topicModalSubtitle").textContent = topic.sourceLabel || topic.source || "中文互联网";
+  document.getElementById("topicModalMeta").textContent = topic.url || "";
+  document.getElementById("readOriginalLink").href = topic.url || "#";
+  resetInterpretationPanel();
+  document.getElementById("topicModal").classList.remove("hidden");
+}
+
+function closeTopicModal() {
+  state.selectedTopic = null;
+  document.getElementById("topicModal").classList.add("hidden");
+}
+
+async function runTopicInterpretation() {
+  if (!state.selectedTopic) return;
+  const button = document.getElementById("interpretTopicBtn");
+  const panel = document.getElementById("topicInterpretationPanel");
+  const status = document.getElementById("topicInterpretationStatus");
+  button.disabled = true;
+  button.textContent = "AI 解读中...";
+  panel.classList.remove("hidden");
+  status.textContent = "正在调用 AI 实时解读，请稍等。";
+
+  try {
+    const result = await request("/api/topics/interpret", {
+      method: "POST",
+      body: JSON.stringify(state.selectedTopic)
+    });
+    const interpretation = result.interpretation || {};
+    status.textContent = `${formatAiModeLabel(interpretation)} · ${interpretation.message || "已生成解读"}`;
+    document.getElementById("topicInterpretationSummary").textContent = interpretation.summary || "";
+    document.getElementById("topicInterpretationWhy").textContent = interpretation.whyHot || "";
+    document.getElementById("topicInterpretationFamily").textContent = interpretation.familyAngle || "";
+    document.getElementById("topicInterpretationRisk").textContent = interpretation.riskNote || "";
+    const list = document.getElementById("topicInterpretationPoints");
+    list.innerHTML = "";
+    (interpretation.talkingPoints || []).forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    });
+  } catch (error) {
+    status.textContent = error.message || "AI 解读失败，请稍后再试。";
+  } finally {
+    button.disabled = false;
+    button.textContent = "AI 智能解读";
+  }
 }
 
 function renderScriptList(report) {
@@ -451,6 +521,14 @@ function normalizeSettingValue(key, value) {
 }
 
 function bindEvents() {
+  document.getElementById("closeTopicModalBtn").addEventListener("click", closeTopicModal);
+  document.getElementById("interpretTopicBtn").addEventListener("click", runTopicInterpretation);
+  document.getElementById("saveTopicBtn").addEventListener("click", () => showToast("收藏功能这版先预留，后面可以接历史收藏。"));
+  document.getElementById("moreTopicBtn").addEventListener("click", () => showToast("其他功能这版先预留，后面可以加转发和备注。"));
+  document.getElementById("topicModal").addEventListener("click", (event) => {
+    if (event.target?.dataset?.closeModal === "true") closeTopicModal();
+  });
+
   document.getElementById("refreshBtn").addEventListener("click", async () => {
     await loadDashboard();
     showToast("今日联系建议已刷新");
