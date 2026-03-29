@@ -47,6 +47,8 @@ function fillSettingsForm(settings) {
     if (value === undefined) return;
     field.value = String(value);
   });
+  const appSecretStatus = document.getElementById("appSecretStatus");
+  appSecretStatus.value = settings.wechat.appSecretConfigured ? "已配置" : "未配置";
 }
 
 function renderDashboard() {
@@ -169,6 +171,7 @@ function bindEvents() {
     const form = new FormData(event.currentTarget);
     const payload = {};
     for (const [key, value] of form.entries()) {
+      if (key === "appSecretStatus") continue;
       let normalized = value;
       if (value === "true") normalized = true;
       if (value === "false") normalized = false;

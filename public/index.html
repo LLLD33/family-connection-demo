@@ -20,7 +20,7 @@
           <p id="topicSummary" class="sidebar-topic"></p>
         </div>
         <div class="sidebar-card accent">
-          <p class="sidebar-label">微信服务通知</p>
+          <p class="sidebar-label">微信订阅消息</p>
           <p id="wechatMode">当前为 mock 模式</p>
           <button id="sendWechatBtn" class="ghost-button">发送一条测试通知</button>
         </div>
@@ -105,7 +105,7 @@
         <section class="card settings-card">
           <div class="card-header">
             <h3>设置</h3>
-            <p class="muted">支持本地保存。微信配置可以先保留 mock 模式，后续填真实参数再接入。</p>
+            <p class="muted">`AppSecret` 不再显示在前端。Cloudflare 线上请用 Worker Secret 保存。</p>
           </div>
           <form id="settingsForm" class="settings-grid">
             <label>
@@ -151,16 +151,36 @@
               <input name="wechat.appId" />
             </label>
             <label>
-              AppSecret
-              <input name="wechat.appSecret" />
-            </label>
-            <label>
               Template ID
               <input name="wechat.templateId" />
             </label>
             <label>
               OpenID
               <input name="wechat.openId" />
+            </label>
+            <label>
+              小程序页面路径
+              <input name="wechat.page" placeholder="pages/index/index" />
+            </label>
+            <label>
+              环境
+              <select name="wechat.miniprogramState">
+                <option value="formal">formal</option>
+                <option value="trial">trial</option>
+                <option value="developer">developer</option>
+              </select>
+            </label>
+            <label>
+              语言
+              <select name="wechat.lang">
+                <option value="zh_CN">zh_CN</option>
+                <option value="zh_TW">zh_TW</option>
+                <option value="en_US">en_US</option>
+              </select>
+            </label>
+            <label class="full-span">
+              AppSecret 状态
+              <input id="appSecretStatus" value="未配置" readonly />
             </label>
             <label class="full-span">
               你的备注
@@ -172,12 +192,12 @@
 
         <section class="card docs-card">
           <div class="card-header">
-            <h3>部署与 GitHub</h3>
+            <h3>微信接入提示</h3>
           </div>
           <ol class="steps">
-            <li>本地运行 `node server.js`，打开 `http://127.0.0.1:3000`。</li>
-            <li>如果要自动推送微信提醒，可把 `/api/cron/daily` 挂到系统计划任务或云端 cron。</li>
-            <li>GitHub 仓库只要把当前目录推上去即可，后续可以接 Railway、Render 或自己的服务器。</li>
+            <li>你需要一个可发送订阅消息的小程序，并拿到 `AppID`、`AppSecret`、模板 ID。</li>
+            <li>接收方必须先在小程序内授权订阅消息，系统才能拿到可用的 `OpenID` 并发送。</li>
+            <li>线上 Cloudflare 版本请把 `WECHAT_APP_SECRET` 配成 Worker Secret，不要填在页面里。</li>
           </ol>
         </section>
       </main>

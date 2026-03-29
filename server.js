@@ -37,6 +37,24 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
 }
 
+function redactSettings(settings) {
+  return {
+    ...settings,
+    wechat: {
+      ...settings.wechat,
+      appSecretConfigured: Boolean(settings.wechat.appSecret || process.env.WECHAT_APP_SECRET),
+      appSecret: ""
+    }
+  };
+}
+
+function resolveWechatConfig(settings) {
+  return {
+    ...settings.wechat,
+    appSecret: settings.wechat.appSecret || process.env.WECHAT_APP_SECRET || ""
+  };
+}
+
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
@@ -189,7 +207,9 @@ function sanitizeHistoryRecord(input) {
 }
 
 async function sendWechatTemplateMessage(settings, payload) {
-  if (!settings.wechat.enabled || settings.wechat.mode === "mock") {
+  const wechat = resolveWechatConfig(settings);
+
+  if (!wechat.enabled || wechat.mode === "mock") {
     return {
       ok: true,
       mode: "mock",
@@ -199,22 +219,22 @@ async function sendWechatTemplateMessage(settings, payload) {
   }
 
   const required = ["appId", "appSecret", "templateId", "openId"];
-  const missing = required.filter((key) => !settings.wechat[key]);
+  const missing = required.filter((key) => !wechat[key]);
   if (missing.length) {
     return {
       ok: false,
-      mode: settings.wechat.mode,
+      mode: wechat.mode,
       message: `缺少微信配置：${missing.join(", ")}`
     };
   }
 
-  const tokenUrl = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(settings.wechat.appId)}&secret=${encodeURIComponent(settings.wechat.appSecret)}`;
+  const tokenUrl = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(wechat.appId)}&secret=${encodeURIComponent(wechat.appSecret)}`;
   const tokenResponse = await fetch(tokenUrl);
   const tokenJson = await tokenResponse.json();
   if (!tokenResponse.ok || !tokenJson.access_token) {
     return {
       ok: false,
-      mode: settings.wechat.mode,
+      mode: wechat.mode,
       message: "获取 access token 失败",
       detail: tokenJson
     };
@@ -226,9 +246,11 @@ async function sendWechatTemplateMessage(settings, payload) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      touser: settings.wechat.openId,
-      template_id: settings.wechat.templateId,
-      page: settings.wechat.page,
+      touser: wechat.openId,
+      template_id: wechat.templateId,
+      page: wechat.page,
+      miniprogram_state: wechat.miniprogramState || "formal",
+      lang: wechat.lang || "zh_CN",
       data: {
         thing1: { value: payload.title.slice(0, 20) },
         thing2: { value: payload.message.slice(0, 20) },
@@ -285,7 +307,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && pathname === "/api/settings") {
-      return sendJson(res, 200, readJson(SETTINGS_FILE));
+      return sendJson(res, 200, redactSettings(readJson(SETTINGS_FILE)));
     }
 
     if (req.method === "POST" && pathname === "/api/settings") {
@@ -297,10 +319,14 @@ const server = http.createServer(async (req, res) => {
         profile: { ...current.profile, ...(body.profile || {}) },
         parents: { ...current.parents, ...(body.parents || {}) },
         cadence: { ...current.cadence, ...(body.cadence || {}) },
-        wechat: { ...current.wechat, ...(body.wechat || {}) }
+        wechat: {
+          ...current.wechat,
+          ...(body.wechat || {}),
+          appSecret: body.wechat?.appSecret ? body.wechat.appSecret : current.wechat.appSecret
+        }
       };
       writeJson(SETTINGS_FILE, next);
-      return sendJson(res, 200, { ok: true, settings: next });
+      return sendJson(res, 200, { ok: true, settings: redactSettings(next) });
     }
 
     if (req.method === "GET" && pathname === "/api/history") {
@@ -324,7 +350,7 @@ const server = http.createServer(async (req, res) => {
       const history = readJson(HISTORY_FILE);
       const date = parsedUrl.searchParams.get("date") || getTodayIso();
       return sendJson(res, 200, {
-        settings,
+        settings: redactSettings(settings),
         promptPack: buildPromptPack(settings, history, date),
         history
       });

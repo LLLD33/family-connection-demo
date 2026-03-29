@@ -57,28 +57,52 @@ npx wrangler deploy
 - `data/settings.json`: 用户与微信配置
 - `data/history.json`: 联系记录
 
-## 微信服务通知
+## 微信订阅消息
 
 默认是 `mock` 模式，不会真的发消息。
 
-如果你要接入真实微信订阅消息：
+如果你要接入真实微信订阅消息，当前项目已经支持：
 
-1. 把 `data/settings.json` 里的 `wechat.enabled` 改成 `true`
-2. 把 `wechat.mode` 改成 `subscribe`
-3. 填入下面字段
+1. 在页面设置里填入：
    - `appId`
-   - `appSecret`
    - `templateId`
    - `openId`
-4. 通过页面按钮或 `POST /api/cron/daily` 触发发送
+   - `page`
+   - `miniprogramState`
+   - `lang`
+2. 把 `wechat.enabled` 设为 `true`
+3. 把 `wechat.mode` 设为 `subscribe`
+4. 把 `AppSecret` 作为服务端密钥保存，不要暴露到前端
 
-当前模板 payload 使用的是微信订阅消息接口：
+### 本地 Node 版
 
+可以直接用环境变量：
+
+```bash
+set WECHAT_APP_SECRET=你的appsecret
+node server.js
+```
+
+### Cloudflare 线上版
+
+使用 Worker Secret：
+
+```bash
+npx wrangler secret put WECHAT_APP_SECRET
+```
+
+当前模板 payload 使用的是微信订阅消息服务端接口：
+
+- `POST https://api.weixin.qq.com/cgi-bin/message/subscribe/send`
 - `thing1`: 标题
 - `thing2`: 建议话术
 - `time3`: 建议联系时间
 
-真实项目里你需要保证模板字段和代码里发送的数据类型一致。
+你需要保证：
+
+- 小程序模板字段和这里发送的数据类型一致
+- 接收用户已经在小程序里授权过订阅消息
+- `openId` 是该小程序下真实可用的用户标识
 
 ## 定时任务
 

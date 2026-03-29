@@ -13,6 +13,24 @@ function jsonResponse(data, status = 200) {
   });
 }
 
+function redactSettings(settings, env) {
+  return {
+    ...settings,
+    wechat: {
+      ...settings.wechat,
+      appSecret: "",
+      appSecretConfigured: Boolean(settings.wechat.appSecret || env.WECHAT_APP_SECRET)
+    }
+  };
+}
+
+function resolveWechatConfig(settings, env) {
+  return {
+    ...settings.wechat,
+    appSecret: settings.wechat.appSecret || env.WECHAT_APP_SECRET || ""
+  };
+}
+
 async function readStore(env, key, fallbackValue) {
   if (!env.APP_DATA) {
     return structuredClone(fallbackValue);
@@ -149,8 +167,10 @@ function sanitizeHistoryRecord(input) {
   };
 }
 
-async function sendWechatTemplateMessage(settings, payload) {
-  if (!settings.wechat.enabled || settings.wechat.mode === "mock") {
+async function sendWechatTemplateMessage(settings, env, payload) {
+  const wechat = resolveWechatConfig(settings, env);
+
+  if (!wechat.enabled || wechat.mode === "mock") {
     return {
       ok: true,
       mode: "mock",
@@ -160,46 +180,55 @@ async function sendWechatTemplateMessage(settings, payload) {
   }
 
   const required = ["appId", "appSecret", "templateId", "openId"];
-  const missing = required.filter((key) => !settings.wechat[key]);
+  const missing = required.filter((key) => !wechat[key]);
   if (missing.length) {
     return {
       ok: false,
-      mode: settings.wechat.mode,
+      mode: wechat.mode,
       message: `缺少微信配置：${missing.join(", ")}`
     };
   }
 
-  const tokenUrl = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(settings.wechat.appId)}&secret=${encodeURIComponent(settings.wechat.appSecret)}`;
+  const tokenUrl =
+    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential` +
+    `&appid=${encodeURIComponent(wechat.appId)}` +
+    `&secret=${encodeURIComponent(wechat.appSecret)}`;
+
   const tokenResponse = await fetch(tokenUrl);
   const tokenJson = await tokenResponse.json();
   if (!tokenResponse.ok || !tokenJson.access_token) {
     return {
       ok: false,
-      mode: settings.wechat.mode,
+      mode: wechat.mode,
       message: "获取 access token 失败",
       detail: tokenJson
     };
   }
 
-  const messageResponse = await fetch(`https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${encodeURIComponent(tokenJson.access_token)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      touser: settings.wechat.openId,
-      template_id: settings.wechat.templateId,
-      page: settings.wechat.page,
-      data: {
-        thing1: { value: payload.title.slice(0, 20) },
-        thing2: { value: payload.message.slice(0, 20) },
-        time3: { value: payload.timeLabel || `${payload.date} ${settings.profile.contactWindow}` }
-      }
-    })
-  });
+  const messageResponse = await fetch(
+    `https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${encodeURIComponent(tokenJson.access_token)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        touser: wechat.openId,
+        template_id: wechat.templateId,
+        page: wechat.page,
+        miniprogram_state: wechat.miniprogramState || "formal",
+        lang: wechat.lang || "zh_CN",
+        data: {
+          thing1: { value: payload.title.slice(0, 20) },
+          thing2: { value: payload.message.slice(0, 20) },
+          time3: { value: payload.timeLabel || `${payload.date} ${settings.profile.contactWindow}` }
+        }
+      })
+    }
+  );
 
   const messageJson = await messageResponse.json();
   return {
     ok: messageResponse.ok && messageJson.errcode === 0,
-    mode: settings.wechat.mode,
+    mode: wechat.mode,
     message: messageJson.errmsg || "发送完成",
     detail: messageJson
   };
@@ -221,14 +250,17 @@ async function handleApi(request, env) {
   const history = await readStore(env, HISTORY_KEY, defaultHistory);
 
   if (request.method === "GET" && pathname === "/api/settings") {
-    return jsonResponse(settings);
+    return jsonResponse(redactSettings(settings, env));
   }
 
   if (request.method === "POST" && pathname === "/api/settings") {
     const body = await request.json();
     const next = mergeSettings(settings, body);
+    if (!body.wechat?.appSecret) {
+      next.wechat.appSecret = settings.wechat.appSecret || "";
+    }
     await writeStore(env, SETTINGS_KEY, next);
-    return jsonResponse({ ok: true, settings: next });
+    return jsonResponse({ ok: true, settings: redactSettings(next, env) });
   }
 
   if (request.method === "GET" && pathname === "/api/history") {
@@ -249,7 +281,7 @@ async function handleApi(request, env) {
   if (request.method === "GET" && pathname === "/api/dashboard") {
     const date = url.searchParams.get("date") || getTodayIso();
     return jsonResponse({
-      settings,
+      settings: redactSettings(settings, env),
       promptPack: buildPromptPack(settings, history, date),
       history
     });
@@ -257,13 +289,13 @@ async function handleApi(request, env) {
 
   if (request.method === "POST" && pathname === "/api/wechat/test") {
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    const result = await sendWechatTemplateMessage(settings, buildWechatPayload(promptPack, settings));
+    const result = await sendWechatTemplateMessage(settings, env, buildWechatPayload(promptPack, settings));
     return jsonResponse(result);
   }
 
   if (request.method === "POST" && pathname === "/api/cron/daily") {
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    const result = await sendWechatTemplateMessage(settings, buildWechatPayload(promptPack, settings));
+    const result = await sendWechatTemplateMessage(settings, env, buildWechatPayload(promptPack, settings));
     return jsonResponse({ ok: true, promptPack, wechat: result });
   }
 
@@ -273,6 +305,7 @@ async function handleApi(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
     if (url.pathname.startsWith("/api/")) {
       try {
         const response = await handleApi(request, env);
@@ -294,6 +327,6 @@ export default {
     const settings = await readStore(env, SETTINGS_KEY, defaultSettings);
     const history = await readStore(env, HISTORY_KEY, defaultHistory);
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    await sendWechatTemplateMessage(settings, buildWechatPayload(promptPack, settings));
+    await sendWechatTemplateMessage(settings, env, buildWechatPayload(promptPack, settings));
   }
 };

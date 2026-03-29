@@ -24,10 +24,11 @@ const defaultSettings = {
     enabled: false,
     mode: "mock",
     appId: "",
-    appSecret: "",
     templateId: "",
     openId: "",
-    page: "pages/index/index"
+    page: "pages/index/index",
+    miniprogramState: "formal",
+    lang: "zh_CN"
   }
 };
 
