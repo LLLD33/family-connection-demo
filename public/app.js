@@ -6,15 +6,11 @@ const state = {
 
 async function request(url, options = {}) {
   const response = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     ...options
   });
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.message || "请求失败");
-  }
+  if (!response.ok) throw new Error(data.message || "请求失败");
   return data;
 }
 
@@ -47,8 +43,7 @@ function fillSettingsForm(settings) {
     if (value === undefined) return;
     field.value = String(value);
   });
-  const appSecretStatus = document.getElementById("appSecretStatus");
-  appSecretStatus.value = settings.wechat.appSecretConfigured ? "已配置" : "未配置";
+  document.getElementById("botTokenStatus").value = settings.telegram.botTokenConfigured ? "已配置" : "未配置";
 }
 
 function renderDashboard() {
@@ -61,9 +56,9 @@ function renderDashboard() {
   document.getElementById("heroSummary").textContent = `${promptPack.summary} 今天建议以“${promptPack.topic}”为主轴，保持自然、轻量、有回应感。`;
   document.getElementById("dayTag").textContent = promptPack.dayName;
   document.getElementById("lastSummary").textContent = promptPack.summary;
-  document.getElementById("wechatMode").textContent = settings.wechat.enabled
-    ? `当前为 ${settings.wechat.mode} 模式`
-    : "当前未启用真实微信发送";
+  document.getElementById("telegramMode").textContent = settings.telegram.enabled
+    ? `当前为 ${settings.telegram.mode} 模式`
+    : "当前未启用真实 Telegram 发送";
 
   const checklist = document.getElementById("checklist");
   checklist.innerHTML = "";
@@ -87,10 +82,8 @@ function renderDashboard() {
   promptPack.suggestions.forEach((item) => {
     const row = document.createElement("div");
     row.className = "suggestion-item";
-
     const text = document.createElement("p");
     text.textContent = item;
-
     const button = document.createElement("button");
     button.className = "copy-button";
     button.textContent = "复制";
@@ -98,7 +91,6 @@ function renderDashboard() {
       await navigator.clipboard.writeText(item);
       showToast("已复制到剪贴板");
     });
-
     row.append(text, button);
     suggestionList.appendChild(row);
   });
@@ -110,18 +102,14 @@ function renderHistory() {
   state.history.forEach((item) => {
     const card = document.createElement("div");
     card.className = "history-item";
-
     const summary = document.createElement("p");
     summary.textContent = item.summary;
-
     const next = document.createElement("p");
     next.className = "muted";
     next.textContent = item.nextIdea ? `下次可聊：${item.nextIdea}` : "下次话题还没记录";
-
     const meta = document.createElement("div");
     meta.className = "history-meta";
     meta.textContent = `${item.date} · ${item.channel} · ${item.mood}`;
-
     card.append(summary, next, meta);
     historyList.appendChild(card);
   });
@@ -145,11 +133,11 @@ function bindEvents() {
 
   document.getElementById("runCronBtn").addEventListener("click", async () => {
     const result = await request("/api/cron/daily", { method: "POST" });
-    showToast(result.wechat?.message || "已执行每日发送");
+    showToast(result.telegram?.message || "已执行每日发送");
   });
 
-  document.getElementById("sendWechatBtn").addEventListener("click", async () => {
-    const result = await request("/api/wechat/test", { method: "POST" });
+  document.getElementById("sendTelegramBtn").addEventListener("click", async () => {
+    const result = await request("/api/telegram/test", { method: "POST" });
     showToast(result.message || "测试发送完成");
   });
 
@@ -157,10 +145,7 @@ function bindEvents() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
-    await request("/api/history", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+    await request("/api/history", { method: "POST", body: JSON.stringify(payload) });
     event.currentTarget.reset();
     await loadDashboard();
     showToast("联系记录已保存");
@@ -171,17 +156,14 @@ function bindEvents() {
     const form = new FormData(event.currentTarget);
     const payload = {};
     for (const [key, value] of form.entries()) {
-      if (key === "appSecretStatus") continue;
+      if (key === "botTokenStatus") continue;
       let normalized = value;
       if (value === "true") normalized = true;
       if (value === "false") normalized = false;
       if (key === "cadence.askForHelpEvery") normalized = Number(value || 3);
       setDeepValue(payload, key, normalized);
     }
-    await request("/api/settings", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+    await request("/api/settings", { method: "POST", body: JSON.stringify(payload) });
     await loadDashboard();
     showToast("设置已保存");
   });

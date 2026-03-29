@@ -16,33 +16,29 @@ function jsonResponse(data, status = 200) {
 function redactSettings(settings, env) {
   return {
     ...settings,
-    wechat: {
-      ...settings.wechat,
-      appSecret: "",
-      appSecretConfigured: Boolean(settings.wechat.appSecret || env.WECHAT_APP_SECRET)
+    telegram: {
+      ...settings.telegram,
+      botToken: "",
+      botTokenConfigured: Boolean(settings.telegram.botToken || env.TELEGRAM_BOT_TOKEN)
     }
   };
 }
 
-function resolveWechatConfig(settings, env) {
+function resolveTelegramConfig(settings, env) {
   return {
-    ...settings.wechat,
-    appSecret: settings.wechat.appSecret || env.WECHAT_APP_SECRET || ""
+    ...settings.telegram,
+    botToken: settings.telegram.botToken || env.TELEGRAM_BOT_TOKEN || ""
   };
 }
 
 async function readStore(env, key, fallbackValue) {
-  if (!env.APP_DATA) {
-    return structuredClone(fallbackValue);
-  }
+  if (!env.APP_DATA) return structuredClone(fallbackValue);
   const raw = await env.APP_DATA.get(key, "json");
   return raw || structuredClone(fallbackValue);
 }
 
 async function writeStore(env, key, value) {
-  if (!env.APP_DATA) {
-    return;
-  }
+  if (!env.APP_DATA) return;
   await env.APP_DATA.put(key, JSON.stringify(value));
 }
 
@@ -61,9 +57,7 @@ function getDayName(dateString) {
 }
 
 function summarizeLastRecord(history) {
-  if (!history.length) {
-    return "还没有记录，适合先从轻松问候开始。";
-  }
+  if (!history.length) return "还没有记录，适合先从轻松问候开始。";
   const last = history[0];
   return `上次在 ${last.date} 聊了：${last.summary}`;
 }
@@ -137,7 +131,7 @@ function buildPromptPack(settings, history, targetDate) {
     checklist: [
       `在 ${settings.profile.contactWindow} 内完成一次轻量联系`,
       deeper ? "今天适合轻微关心身体或生活节奏" : "今天先从轻松内容切入，不要一上来问健康",
-      callDay ? "周末建议发起一次 5 到 10 分钟语音/视频" : "如果对方愿意多说，顺势延长一点",
+      callDay ? "周末建议发起一次 5 到 10 分钟语音或视频" : "如果对方愿意多说，顺势延长一点",
       shouldAskForHelp ? "今天插入一次反向索取，增强参与感" : "保持自然，不需要把关心说得太重"
     ],
     suggestions: suggestions.slice(0, 5),
@@ -152,7 +146,7 @@ function mergeSettings(current, body) {
     profile: { ...current.profile, ...(body.profile || {}) },
     parents: { ...current.parents, ...(body.parents || {}) },
     cadence: { ...current.cadence, ...(body.cadence || {}) },
-    wechat: { ...current.wechat, ...(body.wechat || {}) }
+    telegram: { ...current.telegram, ...(body.telegram || {}) }
   };
 }
 
@@ -167,79 +161,53 @@ function sanitizeHistoryRecord(input) {
   };
 }
 
-async function sendWechatTemplateMessage(settings, env, payload) {
-  const wechat = resolveWechatConfig(settings, env);
+function buildTelegramMessage(promptPack, settings) {
+  return [
+    "*亲情联系提醒*",
+    `日期：${promptPack.date} (${promptPack.dayName})`,
+    `建议主题：${promptPack.topic}`,
+    "",
+    `首条话术：${promptPack.suggestions[0]}`,
+    "",
+    `最近记忆：${promptPack.summary}`,
+    `建议时段：${settings.profile.contactWindow}`
+  ].join("\n");
+}
 
-  if (!wechat.enabled || wechat.mode === "mock") {
+async function sendTelegramMessage(settings, env, promptPack) {
+  const telegram = resolveTelegramConfig(settings, env);
+  if (!telegram.enabled || telegram.mode === "mock") {
     return {
       ok: true,
       mode: "mock",
-      message: "当前为 mock 模式，未真实发送微信服务通知。",
-      payload
+      message: "当前为 mock 模式，未真实发送 Telegram 消息。",
+      payload: { chatId: telegram.chatId, text: buildTelegramMessage(promptPack, settings) }
     };
   }
 
-  const required = ["appId", "appSecret", "templateId", "openId"];
-  const missing = required.filter((key) => !wechat[key]);
+  const required = ["botToken", "chatId"];
+  const missing = required.filter((key) => !telegram[key]);
   if (missing.length) {
-    return {
-      ok: false,
-      mode: wechat.mode,
-      message: `缺少微信配置：${missing.join(", ")}`
-    };
+    return { ok: false, mode: telegram.mode, message: `缺少 Telegram 配置：${missing.join(", ")}` };
   }
 
-  const tokenUrl =
-    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential` +
-    `&appid=${encodeURIComponent(wechat.appId)}` +
-    `&secret=${encodeURIComponent(wechat.appSecret)}`;
+  const response = await fetch(`https://api.telegram.org/bot${encodeURIComponent(telegram.botToken)}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: telegram.chatId,
+      text: buildTelegramMessage(promptPack, settings),
+      parse_mode: telegram.parseMode || "Markdown",
+      disable_web_page_preview: true
+    })
+  });
 
-  const tokenResponse = await fetch(tokenUrl);
-  const tokenJson = await tokenResponse.json();
-  if (!tokenResponse.ok || !tokenJson.access_token) {
-    return {
-      ok: false,
-      mode: wechat.mode,
-      message: "获取 access token 失败",
-      detail: tokenJson
-    };
-  }
-
-  const messageResponse = await fetch(
-    `https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${encodeURIComponent(tokenJson.access_token)}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        touser: wechat.openId,
-        template_id: wechat.templateId,
-        page: wechat.page,
-        miniprogram_state: wechat.miniprogramState || "formal",
-        lang: wechat.lang || "zh_CN",
-        data: {
-          thing1: { value: payload.title.slice(0, 20) },
-          thing2: { value: payload.message.slice(0, 20) },
-          time3: { value: payload.timeLabel || `${payload.date} ${settings.profile.contactWindow}` }
-        }
-      })
-    }
-  );
-
-  const messageJson = await messageResponse.json();
+  const result = await response.json();
   return {
-    ok: messageResponse.ok && messageJson.errcode === 0,
-    mode: wechat.mode,
-    message: messageJson.errmsg || "发送完成",
-    detail: messageJson
-  };
-}
-
-function buildWechatPayload(promptPack, settings) {
-  return {
-    title: `今天联系${settings.parents.fatherName || "爸妈"}`,
-    message: promptPack.suggestions[0],
-    timeLabel: `${promptPack.date} ${settings.profile.contactWindow}`,
-    date: promptPack.date
+    ok: response.ok && result.ok === true,
+    mode: telegram.mode,
+    message: result.description || (result.ok ? "发送完成" : "发送失败"),
+    detail: result
   };
 }
 
@@ -256,9 +224,7 @@ async function handleApi(request, env) {
   if (request.method === "POST" && pathname === "/api/settings") {
     const body = await request.json();
     const next = mergeSettings(settings, body);
-    if (!body.wechat?.appSecret) {
-      next.wechat.appSecret = settings.wechat.appSecret || "";
-    }
+    if (!body.telegram?.botToken) next.telegram.botToken = settings.telegram.botToken || "";
     await writeStore(env, SETTINGS_KEY, next);
     return jsonResponse({ ok: true, settings: redactSettings(next, env) });
   }
@@ -269,9 +235,7 @@ async function handleApi(request, env) {
 
   if (request.method === "POST" && pathname === "/api/history") {
     const body = await request.json();
-    if (!body.summary) {
-      return jsonResponse({ ok: false, message: "summary 为必填" }, 400);
-    }
+    if (!body.summary) return jsonResponse({ ok: false, message: "summary 为必填" }, 400);
     const nextRecord = sanitizeHistoryRecord(body);
     const nextHistory = [nextRecord, ...history].slice(0, 50);
     await writeStore(env, HISTORY_KEY, nextHistory);
@@ -287,16 +251,14 @@ async function handleApi(request, env) {
     });
   }
 
-  if (request.method === "POST" && pathname === "/api/wechat/test") {
+  if (request.method === "POST" && pathname === "/api/telegram/test") {
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    const result = await sendWechatTemplateMessage(settings, env, buildWechatPayload(promptPack, settings));
-    return jsonResponse(result);
+    return jsonResponse(await sendTelegramMessage(settings, env, promptPack));
   }
 
   if (request.method === "POST" && pathname === "/api/cron/daily") {
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    const result = await sendWechatTemplateMessage(settings, env, buildWechatPayload(promptPack, settings));
-    return jsonResponse({ ok: true, promptPack, wechat: result });
+    return jsonResponse({ ok: true, promptPack, telegram: await sendTelegramMessage(settings, env, promptPack) });
   }
 
   return null;
@@ -305,7 +267,6 @@ async function handleApi(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
     if (url.pathname.startsWith("/api/")) {
       try {
         const response = await handleApi(request, env);
@@ -315,11 +276,7 @@ export default {
         return jsonResponse({ ok: false, message: error.message }, 500);
       }
     }
-
-    if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
-    }
-
+    if (env.ASSETS) return env.ASSETS.fetch(request);
     return new Response("Static assets binding is missing.", { status: 500 });
   },
 
@@ -327,6 +284,6 @@ export default {
     const settings = await readStore(env, SETTINGS_KEY, defaultSettings);
     const history = await readStore(env, HISTORY_KEY, defaultHistory);
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    await sendWechatTemplateMessage(settings, env, buildWechatPayload(promptPack, settings));
+    await sendTelegramMessage(settings, env, promptPack);
   }
 };

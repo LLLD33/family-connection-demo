@@ -1,14 +1,14 @@
 # 亲情联系助手 Demo
 
-一个可本地运行的 Web demo，用来验证“异地子女低成本维持和父母稳定联系”的产品方向。
+一个可本地运行、也可部署到 Cloudflare 的 Web demo，用来验证“异地子女低成本维持和父母稳定联系”的产品方向。
 
 ## 功能
 
 - 每天生成一次联系建议和可直接发送的话术
 - 支持保存联系记录，形成后续话题记忆
 - 提供“反向索取”节奏，避免只会机械关心
-- 预留微信服务通知发送接口
-- 本地 JSON 存储，适合快速演示和继续迭代
+- 支持 Telegram Bot 推送
+- 本地 JSON 存储，Cloudflare 线上使用 KV
 
 ## 本地启动
 
@@ -18,6 +18,42 @@ node server.js
 
 然后打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)
 
+## Telegram 推送
+
+默认是 `mock` 模式，不会真的发消息。
+
+如果你要接入真实 Telegram 推送：
+
+1. 在页面设置里填入：
+   - `chatId`
+   - `parseMode`
+2. 把 `telegram.enabled` 设为 `true`
+3. 把 `telegram.mode` 设为 `bot`
+4. 把 `Bot Token` 作为服务端密钥保存，不要暴露到前端
+
+### 本地 Node 版
+
+```bash
+set TELEGRAM_BOT_TOKEN=你的_bot_token
+node server.js
+```
+
+### Cloudflare 线上版
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+```
+
+当前使用的 Telegram Bot API 是：
+
+- `POST https://api.telegram.org/bot<TOKEN>/sendMessage`
+
+你需要保证：
+
+- 机器人由 `@BotFather` 创建并可用
+- 目标用户或群已经和机器人产生过一次会话
+- `chatId` 真实可用
+
 ## Cloudflare 部署
 
 这个项目已经补好了 Cloudflare Worker 版本：
@@ -26,18 +62,10 @@ node server.js
 - `wrangler.toml`: Cloudflare 部署配置
 - `public/`: 作为静态资源直接托管
 
-### 第一次部署前需要准备
-
-1. 登录 Cloudflare
-2. 创建一个 KV namespace
-3. 把 `wrangler.toml` 里的 KV id 替换掉
-
 ### 常用命令
 
 ```bash
 npx wrangler login
-npx wrangler kv namespace create APP_DATA
-npx wrangler kv namespace create APP_DATA --preview
 npx wrangler deploy
 ```
 
@@ -50,78 +78,12 @@ npx wrangler deploy
   - 对应东京 `21:00`
   - 对应中国 `20:00`
 
-## 目录结构
-
-- `server.js`: 原生 Node HTTP 服务和 API
-- `public/`: 前端静态页面
-- `data/settings.json`: 用户与微信配置
-- `data/history.json`: 联系记录
-
-## 微信订阅消息
-
-默认是 `mock` 模式，不会真的发消息。
-
-如果你要接入真实微信订阅消息，当前项目已经支持：
-
-1. 在页面设置里填入：
-   - `appId`
-   - `templateId`
-   - `openId`
-   - `page`
-   - `miniprogramState`
-   - `lang`
-2. 把 `wechat.enabled` 设为 `true`
-3. 把 `wechat.mode` 设为 `subscribe`
-4. 把 `AppSecret` 作为服务端密钥保存，不要暴露到前端
-
-### 本地 Node 版
-
-可以直接用环境变量：
-
-```bash
-set WECHAT_APP_SECRET=你的appsecret
-node server.js
-```
-
-### Cloudflare 线上版
-
-使用 Worker Secret：
-
-```bash
-npx wrangler secret put WECHAT_APP_SECRET
-```
-
-当前模板 payload 使用的是微信订阅消息服务端接口：
-
-- `POST https://api.weixin.qq.com/cgi-bin/message/subscribe/send`
-- `thing1`: 标题
-- `thing2`: 建议话术
-- `time3`: 建议联系时间
-
-你需要保证：
-
-- 小程序模板字段和这里发送的数据类型一致
-- 接收用户已经在小程序里授权过订阅消息
-- `openId` 是该小程序下真实可用的用户标识
-
-## 定时任务
-
-你可以把下面的地址挂到系统计划任务、云函数或服务器 cron：
-
-```bash
-POST http://127.0.0.1:3000/api/cron/daily
-```
-
 ## GitHub
 
-如果当前目录已经初始化为 git 仓库，可以直接：
+当前目录已经初始化为 git 仓库，可以直接：
 
 ```bash
 git add .
-git commit -m "feat: family connection demo"
-git branch -M main
-git remote add origin <your-repo-url>
-git push -u origin main
+git commit -m "feat: switch notification to telegram"
+git push
 ```
-
-如果你告诉我远程仓库地址，我可以继续帮你把这一步也处理掉。

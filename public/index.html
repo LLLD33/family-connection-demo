@@ -20,9 +20,9 @@
           <p id="topicSummary" class="sidebar-topic"></p>
         </div>
         <div class="sidebar-card accent">
-          <p class="sidebar-label">微信订阅消息</p>
-          <p id="wechatMode">当前为 mock 模式</p>
-          <button id="sendWechatBtn" class="ghost-button">发送一条测试通知</button>
+          <p class="sidebar-label">Telegram 推送</p>
+          <p id="telegramMode">当前为 mock 模式</p>
+          <button id="sendTelegramBtn" class="ghost-button">发送一条测试通知</button>
         </div>
       </aside>
 
@@ -105,7 +105,7 @@
         <section class="card settings-card">
           <div class="card-header">
             <h3>设置</h3>
-            <p class="muted">`AppSecret` 不再显示在前端。Cloudflare 线上请用 Worker Secret 保存。</p>
+            <p class="muted">Bot Token 不回显到前端。线上 Cloudflare 请用 Worker Secret 保存。</p>
           </div>
           <form id="settingsForm" class="settings-grid">
             <label>
@@ -133,54 +133,33 @@
               <input name="cadence.askForHelpEvery" type="number" min="1" value="3" />
             </label>
             <label>
-              微信模式
-              <select name="wechat.mode">
+              Telegram 模式
+              <select name="telegram.mode">
                 <option value="mock">mock</option>
-                <option value="subscribe">subscribe</option>
+                <option value="bot">bot</option>
               </select>
             </label>
             <label>
-              启用微信通知
-              <select name="wechat.enabled">
+              启用 Telegram 推送
+              <select name="telegram.enabled">
                 <option value="false">false</option>
                 <option value="true">true</option>
               </select>
             </label>
             <label>
-              AppID
-              <input name="wechat.appId" />
+              Chat ID
+              <input name="telegram.chatId" />
             </label>
             <label>
-              Template ID
-              <input name="wechat.templateId" />
-            </label>
-            <label>
-              OpenID
-              <input name="wechat.openId" />
-            </label>
-            <label>
-              小程序页面路径
-              <input name="wechat.page" placeholder="pages/index/index" />
-            </label>
-            <label>
-              环境
-              <select name="wechat.miniprogramState">
-                <option value="formal">formal</option>
-                <option value="trial">trial</option>
-                <option value="developer">developer</option>
-              </select>
-            </label>
-            <label>
-              语言
-              <select name="wechat.lang">
-                <option value="zh_CN">zh_CN</option>
-                <option value="zh_TW">zh_TW</option>
-                <option value="en_US">en_US</option>
+              Parse Mode
+              <select name="telegram.parseMode">
+                <option value="Markdown">Markdown</option>
+                <option value="HTML">HTML</option>
               </select>
             </label>
             <label class="full-span">
-              AppSecret 状态
-              <input id="appSecretStatus" value="未配置" readonly />
+              Bot Token 状态
+              <input id="botTokenStatus" value="未配置" readonly />
             </label>
             <label class="full-span">
               你的备注
@@ -192,12 +171,12 @@
 
         <section class="card docs-card">
           <div class="card-header">
-            <h3>微信接入提示</h3>
+            <h3>Telegram 接入提示</h3>
           </div>
           <ol class="steps">
-            <li>你需要一个可发送订阅消息的小程序，并拿到 `AppID`、`AppSecret`、模板 ID。</li>
-            <li>接收方必须先在小程序内授权订阅消息，系统才能拿到可用的 `OpenID` 并发送。</li>
-            <li>线上 Cloudflare 版本请把 `WECHAT_APP_SECRET` 配成 Worker Secret，不要填在页面里。</li>
+            <li>先用 `@BotFather` 创建一个 Telegram Bot，拿到 `Bot Token`。</li>
+            <li>让目标账号或群先和机器人产生一次对话，再拿到可用的 `Chat ID`。</li>
+            <li>线上 Cloudflare 版本请把 `TELEGRAM_BOT_TOKEN` 配成 Worker Secret，不要直接写在页面里。</li>
           </ol>
         </section>
       </main>

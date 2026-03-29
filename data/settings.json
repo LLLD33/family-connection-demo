@@ -10,7 +10,7 @@
     "hometown": "常州",
     "fatherName": "爸爸",
     "motherName": "妈妈",
-    "fatherContext": "半退休，有教学/上课节奏",
+    "fatherContext": "半退休，有教学或上课安排",
     "motherContext": "生活稳定，喜欢和朋友保持联系",
     "interactionStyle": "轻松、自然、有参与感"
   },
@@ -23,14 +23,10 @@
     "callDay": "Saturday",
     "askForHelpEvery": 3
   },
-  "wechat": {
+  "telegram": {
     "enabled": false,
     "mode": "mock",
-    "appId": "",
-    "templateId": "",
-    "openId": "",
-    "page": "pages/index/index",
-    "miniprogramState": "formal",
-    "lang": "zh_CN"
+    "chatId": "",
+    "parseMode": "Markdown"
   }
 }
