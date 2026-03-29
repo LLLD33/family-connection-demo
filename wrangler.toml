@@ -1,0 +1,18 @@
+name = "family-connection-demo"
+main = "src/worker.js"
+compatibility_date = "2026-03-29"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "APP_DATA"
+id = "f42f06b652b54dce86c7eb100719b0dc"
+preview_id = "749a5081ac6441949f40b4f149ed32d7"
+
+[observability.logs]
+enabled = true
+
+[triggers]
+crons = ["0 12 * * *"]

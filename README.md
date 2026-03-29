@@ -18,6 +18,38 @@ node server.js
 
 然后打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)
 
+## Cloudflare 部署
+
+这个项目已经补好了 Cloudflare Worker 版本：
+
+- `src/worker.js`: Cloudflare Worker API
+- `wrangler.toml`: Cloudflare 部署配置
+- `public/`: 作为静态资源直接托管
+
+### 第一次部署前需要准备
+
+1. 登录 Cloudflare
+2. 创建一个 KV namespace
+3. 把 `wrangler.toml` 里的 KV id 替换掉
+
+### 常用命令
+
+```bash
+npx wrangler login
+npx wrangler kv namespace create APP_DATA
+npx wrangler kv namespace create APP_DATA --preview
+npx wrangler deploy
+```
+
+### 部署结果
+
+- 静态页面会直接在 Cloudflare 上提供
+- `/api/*` 会由 Worker 处理
+- 设置和联系记录会写入 KV
+- 每天 `12:00 UTC` 会触发一次 cron
+  - 对应东京 `21:00`
+  - 对应中国 `20:00`
+
 ## 目录结构
 
 - `server.js`: 原生 Node HTTP 服务和 API

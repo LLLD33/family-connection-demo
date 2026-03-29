@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
+const { defaultSettings, defaultHistory } = require("./defaults");
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 3000);
@@ -13,8 +14,8 @@ const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 
 ensureDir(DATA_DIR);
 ensureDir(PUBLIC_DIR);
-ensureFile(SETTINGS_FILE, defaultSettings());
-ensureFile(HISTORY_FILE, []);
+ensureFile(SETTINGS_FILE, defaultSettings);
+ensureFile(HISTORY_FILE, defaultHistory);
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -26,41 +27,6 @@ function ensureFile(filePath, fallbackValue) {
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, JSON.stringify(fallbackValue, null, 2), "utf8");
   }
-}
-
-function defaultSettings() {
-  return {
-    profile: {
-      name: "在东京工作的你",
-      city: "东京",
-      timezone: "Asia/Tokyo",
-      contactWindow: "20:00-22:00",
-      notes: "工作日下班后容易累，希望低成本维持联系。"
-    },
-    parents: {
-      hometown: "常州",
-      fatherName: "爸爸",
-      motherName: "妈妈",
-      fatherContext: "半退休，有教学/上课节奏",
-      motherContext: "生活稳定，喜欢和朋友保持联系",
-      interactionStyle: "轻松、自然、有参与感"
-    },
-    cadence: {
-      dailyTouchpoint: true,
-      deeperDays: ["Wednesday", "Sunday"],
-      callDay: "Saturday",
-      askForHelpEvery: 3
-    },
-    wechat: {
-      enabled: false,
-      mode: "mock",
-      appId: "",
-      appSecret: "",
-      templateId: "",
-      openId: "",
-      page: "pages/index/index"
-    }
-  };
 }
 
 function readJson(filePath) {
