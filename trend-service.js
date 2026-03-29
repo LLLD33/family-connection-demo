@@ -734,9 +734,10 @@ function extractTopicKeywords(title) {
 
 function validateInterpretation(topic, payload) {
   const haystack = [payload.summary, payload.whyHot, payload.familyAngle, payload.riskNote, ...(payload.talkingPoints || [])].join(" ");
+  if (haystack.includes(topic.title)) return true;
   const keywords = extractTopicKeywords(topic.title);
   if (!keywords.length) return true;
-  return keywords.some((keyword) => haystack.includes(keyword));
+  return keywords.filter((keyword) => haystack.includes(keyword)).length >= 2;
 }
 
 function buildFallbackInterpretation(topic) {
