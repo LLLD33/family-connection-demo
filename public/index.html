@@ -12,7 +12,7 @@
         <div>
           <p class="eyebrow">Family Connection Demo</p>
           <h1>亲情联系助手</h1>
-          <p class="muted">帮你用最低成本，持续把“想到父母”变成“真的联系上”。</p>
+          <p class="muted">帮你把“想到爸妈”变成一个真的能坚持下去的陪伴节奏。</p>
         </div>
         <div class="sidebar-card">
           <p class="sidebar-label">今天的目标</p>
@@ -22,7 +22,8 @@
         <div class="sidebar-card accent">
           <p class="sidebar-label">Telegram 推送</p>
           <p id="telegramMode">当前为 mock 模式</p>
-          <button id="sendTelegramBtn" class="ghost-button">发送一条测试通知</button>
+          <p id="sendStatus" class="muted">最近一次发送状态会显示在这里。</p>
+          <button id="sendTelegramBtn" class="ghost-button">立即发送一条测试通知</button>
         </div>
       </aside>
 
@@ -72,11 +73,11 @@
             <form id="historyForm" class="stack-form">
               <label>
                 今天聊了什么
-                <textarea name="summary" rows="4" placeholder="比如：聊了今天吃什么，顺带问了爸爸最近累不累"></textarea>
+                <textarea name="summary" rows="4" placeholder="比如：我先说了下班有点累，后来问了爸爸最近上课累不累"></textarea>
               </label>
               <label>
                 下次可聊
-                <input name="nextIdea" placeholder="比如：问妈妈那道菜怎么做" />
+                <input name="nextIdea" placeholder="比如：问妈妈上次那道菜怎么做" />
               </label>
               <div class="inline-fields">
                 <label>
@@ -102,82 +103,84 @@
           </article>
         </section>
 
-        <section class="card settings-card">
-          <div class="card-header">
-            <h3>设置</h3>
-            <p class="muted">Bot Token 不回显到前端。线上 Cloudflare 请用 Worker Secret 保存。</p>
-          </div>
-          <form id="settingsForm" class="settings-grid">
-            <label>
-              你的城市
-              <input name="profile.city" value="东京" />
-            </label>
-            <label>
-              联系时间窗
-              <input name="profile.contactWindow" value="20:00-22:00" />
-            </label>
-            <label>
-              爸爸称呼
-              <input name="parents.fatherName" value="爸爸" />
-            </label>
-            <label>
-              妈妈称呼
-              <input name="parents.motherName" value="妈妈" />
-            </label>
-            <label>
-              老家/父母所在城市
-              <input name="parents.hometown" value="常州" />
-            </label>
-            <label>
-              反向索取频率
-              <input name="cadence.askForHelpEvery" type="number" min="1" value="3" />
-            </label>
-            <label>
-              Telegram 模式
-              <select name="telegram.mode">
-                <option value="mock">mock</option>
-                <option value="bot">bot</option>
-              </select>
-            </label>
-            <label>
-              启用 Telegram 推送
-              <select name="telegram.enabled">
-                <option value="false">false</option>
-                <option value="true">true</option>
-              </select>
-            </label>
-            <label>
-              Chat ID
-              <input name="telegram.chatId" />
-            </label>
-            <label>
-              Parse Mode
-              <select name="telegram.parseMode">
-                <option value="Markdown">Markdown</option>
-                <option value="HTML">HTML</option>
-              </select>
-            </label>
-            <label class="full-span">
-              Bot Token 状态
-              <input id="botTokenStatus" value="未配置" readonly />
-            </label>
-            <label class="full-span">
-              你的备注
-              <input name="profile.notes" value="工作日下班后容易累，希望低成本维持联系。" />
-            </label>
-            <button type="submit" class="primary-button">保存设置</button>
-          </form>
-        </section>
+        <section class="grid two-up">
+          <article class="card settings-card">
+            <div class="card-header">
+              <h3>设置</h3>
+              <p class="muted">Bot Token 不回显到前端。线上 Cloudflare 请用 Worker Secret 保存。</p>
+            </div>
+            <form id="settingsForm" class="settings-grid">
+              <label>
+                你的人设称呼
+                <input name="profile.name" value="在东京工作的你" />
+              </label>
+              <label>
+                你的城市
+                <input name="profile.city" value="东京" />
+              </label>
+              <label>
+                联系时间窗
+                <input name="profile.contactWindow" value="20:00-22:00" />
+              </label>
+              <label>
+                爸爸称呼
+                <input name="parents.fatherName" value="爸爸" />
+              </label>
+              <label>
+                妈妈称呼
+                <input name="parents.motherName" value="妈妈" />
+              </label>
+              <label>
+                老家/父母所在城市
+                <input name="parents.hometown" value="常州" />
+              </label>
+              <label>
+                反向索取频率
+                <input name="cadence.askForHelpEvery" type="number" min="1" value="3" />
+              </label>
+              <label>
+                Telegram 模式
+                <select name="telegram.mode">
+                  <option value="mock">mock</option>
+                  <option value="bot">bot</option>
+                </select>
+              </label>
+              <label>
+                启用 Telegram 推送
+                <select name="telegram.enabled">
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </label>
+              <label>
+                Chat ID
+                <input name="telegram.chatId" />
+              </label>
+              <label>
+                Parse Mode
+                <select name="telegram.parseMode">
+                  <option value="Markdown">Markdown</option>
+                  <option value="HTML">HTML</option>
+                </select>
+              </label>
+              <label class="full-span">
+                Bot Token 状态
+                <input id="botTokenStatus" value="未配置" readonly />
+              </label>
+              <label class="full-span">
+                你的备注
+                <input name="profile.notes" value="工作日下班后容易累，希望低成本维持联系。" />
+              </label>
+              <button type="submit" class="primary-button">保存设置</button>
+            </form>
+          </article>
 
-        <section class="card docs-card">
-          <div class="card-header">
-            <h3>Telegram 接入提示</h3>
-          </div>
-          <ol class="steps">
-            <li>先用 `@BotFather` 创建一个 Telegram Bot，拿到 `Bot Token`。</li>
-            <li>让目标账号或群先和机器人产生一次对话，再拿到可用的 `Chat ID`。</li>
-            <li>线上 Cloudflare 版本请把 `TELEGRAM_BOT_TOKEN` 配成 Worker Secret，不要直接写在页面里。</li>
-          </ol>
+          <article class="card">
+            <div class="card-header">
+              <h3>发送记录</h3>
+            </div>
+            <div id="deliveryList" class="history-list"></div>
+          </article>
         </section>
       </main>
     </div>

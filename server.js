@@ -11,11 +11,13 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
+const DELIVERY_FILE = path.join(DATA_DIR, "delivery-log.json");
 
 ensureDir(DATA_DIR);
 ensureDir(PUBLIC_DIR);
 ensureFile(SETTINGS_FILE, defaultSettings);
 ensureFile(HISTORY_FILE, defaultHistory);
+ensureFile(DELIVERY_FILE, []);
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
@@ -33,6 +35,10 @@ function readJson(filePath) {
 
 function writeJson(filePath, value) {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+}
+
+function getNowIso() {
+  return new Date().toISOString();
 }
 
 function redactSettings(settings) {
@@ -106,7 +112,7 @@ function getTodayIso() {
 }
 
 function summarizeLastRecord(history) {
-  if (!history.length) return "还没有记录，适合先从轻松问候开始。";
+  if (!history.length) return "还没有记录，今天适合先从轻松问候开始。";
   const last = history[0];
   return `上次在 ${last.date} 聊了：${last.summary}`;
 }
@@ -130,39 +136,40 @@ function buildPromptPack(settings, history, targetDate) {
   const motherName = settings.parents.motherName || "妈妈";
   const hometown = settings.parents.hometown || "家里";
   const city = settings.profile.city || "东京";
+  const profileName = settings.profile.name || "你";
 
   const baseTopic = {
-    Monday: "轻松开场，先说说你今天的状态",
-    Tuesday: "从吃饭切入，最自然也最好接",
-    Wednesday: "顺带问问身体和最近作息",
+    Monday: "先讲你今天的状态，再把话题带给爸妈",
+    Tuesday: "从吃饭和天气切入，最自然也最容易接住",
+    Wednesday: "轻轻带到身体和作息，不要一上来太沉重",
     Thursday: "发一个生活碎片，降低开口成本",
-    Friday: "聊聊工作或最近见闻",
-    Saturday: "发起 5 到 10 分钟语音或视频",
-    Sunday: "稍微深入一点，聊近况和生活安排"
+    Friday: "聊聊这周见闻，让他们参与到你的生活里",
+    Saturday: "周末适合升级成 5 到 10 分钟语音或视频",
+    Sunday: "稍微深入一点，聊近况和下周安排"
   }[dayName] || "用轻松的问候开启聊天";
 
   const starters = [
-    `我这边今天忙完有点累，你们在 ${hometown} 今天过得怎么样？`,
-    `${city} 这边今天感觉挺特别的，你们今天吃什么了？`,
-    "我刚想起来最近都没问你们了，今天家里有什么新鲜事吗？"
+    `${profileName} 今天下班有点累，不过想到你们了。你们在 ${hometown} 今天过得怎么样？`,
+    `${city} 这边今天有点小变化，你们今天吃什么了？`,
+    `我刚忙完，突然想起最近都没好好问你们。家里今天有什么新鲜事吗？`
   ];
 
   const deeperPrompts = [
-    "最近有没有哪里不太舒服？要不要我顺手帮你们查一下怎么调理？",
+    `最近有没有哪里不太舒服？如果有的话我可以顺手帮你们查查怎么调理。`,
     `${fatherName} 最近上课或者安排多不多，累不累？`,
-    `${motherName} 最近有没有和朋友出去走走？`
+    `${motherName} 最近有没有和朋友出去走走或者吃个饭？`
   ];
 
   const askForHelpPrompts = [
-    `${motherName}，你上次说的那个家常菜怎么做来着？我想周末试一下。`,
+    `${motherName}，你上次说的那个家常菜到底怎么做来着？我这周想试一下。`,
     `${fatherName}，你以前工作累的时候一般怎么缓过来的？我最近也想学学。`,
-    "我最近有点想把生活过规律一点，你们以前是怎么坚持下来的？"
+    `我最近想把作息调整规律一点，你们以前是怎么坚持下来的？`
   ];
 
   const fragments = [
-    "发一张今天的晚饭、通勤路上或天气照片，再配一句轻松吐槽。",
-    "如果今天没空长聊，就发一句“我刚下班，想到你们了”。",
-    "如果已经连续几天都在文字聊天，今天适合把文字升级成语音。"
+    "拍一张今天的晚饭、通勤路上或天气照片，配一句轻松吐槽。",
+    "如果今天实在忙，就发一句“我刚下班，想到你们了”。",
+    "如果已经连续几天都在文字聊天，今天适合升级成语音。"
   ];
 
   const suggestions = [...starters];
@@ -180,7 +187,7 @@ function buildPromptPack(settings, history, targetDate) {
     checklist: [
       `在 ${settings.profile.contactWindow} 内完成一次轻量联系`,
       deeper ? "今天适合轻微关心身体或生活节奏" : "今天先从轻松内容切入，不要一上来问健康",
-      callDay ? "周末建议发起一次 5 到 10 分钟语音或视频" : "如果对方愿意多说，顺势延长一点",
+      callDay ? "周末建议发起一次 5 到 10 分钟语音或视频" : "如果对方愿意多说，顺势多聊一点",
       shouldAskForHelp ? "今天插入一次反向索取，增强参与感" : "保持自然，不需要把关心说得太重"
     ],
     suggestions: suggestions.slice(0, 5),
@@ -212,21 +219,55 @@ function buildTelegramMessage(promptPack, settings) {
   ].join("\n");
 }
 
-async function sendTelegramMessage(settings, promptPack) {
+function appendDeliveryLog(entry) {
+  const logs = readJson(DELIVERY_FILE);
+  logs.unshift({
+    id: `delivery_${Date.now()}`,
+    createdAt: getNowIso(),
+    ...entry
+  });
+  writeJson(DELIVERY_FILE, logs.slice(0, 20));
+  return logs.slice(0, 20);
+}
+
+async function sendTelegramMessage(settings, promptPack, trigger = "manual") {
   const telegram = resolveTelegramConfig(settings);
+  const text = buildTelegramMessage(promptPack, settings);
+
   if (!telegram.enabled || telegram.mode === "mock") {
+    const history = appendDeliveryLog({
+      ok: true,
+      mode: "mock",
+      trigger,
+      chatId: telegram.chatId || "",
+      preview: text
+    });
     return {
       ok: true,
       mode: "mock",
       message: "当前为 mock 模式，未真实发送 Telegram 消息。",
-      payload: { chatId: telegram.chatId, text: buildTelegramMessage(promptPack, settings) }
+      payload: { chatId: telegram.chatId, text },
+      deliveryHistory: history
     };
   }
 
   const required = ["botToken", "chatId"];
   const missing = required.filter((key) => !telegram[key]);
   if (missing.length) {
-    return { ok: false, mode: telegram.mode, message: `缺少 Telegram 配置：${missing.join(", ")}` };
+    const history = appendDeliveryLog({
+      ok: false,
+      mode: telegram.mode,
+      trigger,
+      chatId: telegram.chatId || "",
+      preview: text,
+      error: `缺少 Telegram 配置：${missing.join(", ")}`
+    });
+    return {
+      ok: false,
+      mode: telegram.mode,
+      message: `缺少 Telegram 配置：${missing.join(", ")}`,
+      deliveryHistory: history
+    };
   }
 
   const response = await fetch(`https://api.telegram.org/bot${encodeURIComponent(telegram.botToken)}/sendMessage`, {
@@ -234,18 +275,30 @@ async function sendTelegramMessage(settings, promptPack) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: telegram.chatId,
-      text: buildTelegramMessage(promptPack, settings),
+      text,
       parse_mode: telegram.parseMode || "Markdown",
       disable_web_page_preview: true
     })
   });
 
   const result = await response.json();
-  return {
-    ok: response.ok && result.ok === true,
+  const ok = response.ok && result.ok === true;
+  const history = appendDeliveryLog({
+    ok,
     mode: telegram.mode,
-    message: result.description || (result.ok ? "发送完成" : "发送失败"),
-    detail: result
+    trigger,
+    chatId: telegram.chatId,
+    preview: text,
+    messageId: result.result?.message_id || null,
+    error: ok ? "" : (result.description || "发送失败")
+  });
+
+  return {
+    ok,
+    mode: telegram.mode,
+    message: result.description || (ok ? "发送完成" : "发送失败"),
+    detail: result,
+    deliveryHistory: history
   };
 }
 
@@ -308,6 +361,10 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, record: nextRecord, history: history.slice(0, 50) });
     }
 
+    if (req.method === "GET" && pathname === "/api/delivery-log") {
+      return sendJson(res, 200, readJson(DELIVERY_FILE));
+    }
+
     if (req.method === "GET" && pathname === "/api/dashboard") {
       const settings = readJson(SETTINGS_FILE);
       const history = readJson(HISTORY_FILE);
@@ -315,7 +372,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         settings: redactSettings(settings),
         promptPack: buildPromptPack(settings, history, date),
-        history
+        history,
+        deliveryHistory: readJson(DELIVERY_FILE)
       });
     }
 
@@ -323,14 +381,18 @@ const server = http.createServer(async (req, res) => {
       const settings = readJson(SETTINGS_FILE);
       const history = readJson(HISTORY_FILE);
       const promptPack = buildPromptPack(settings, history, getTodayIso());
-      return sendJson(res, 200, await sendTelegramMessage(settings, promptPack));
+      return sendJson(res, 200, await sendTelegramMessage(settings, promptPack, "manual"));
     }
 
     if (req.method === "POST" && pathname === "/api/cron/daily") {
       const settings = readJson(SETTINGS_FILE);
       const history = readJson(HISTORY_FILE);
       const promptPack = buildPromptPack(settings, history, getTodayIso());
-      return sendJson(res, 200, { ok: true, promptPack, telegram: await sendTelegramMessage(settings, promptPack) });
+      return sendJson(res, 200, {
+        ok: true,
+        promptPack,
+        telegram: await sendTelegramMessage(settings, promptPack, "scheduled")
+      });
     }
 
     if (req.method === "GET" && (pathname === "/" || pathname.endsWith(".css") || pathname.endsWith(".js"))) {

@@ -1,7 +1,8 @@
 const state = {
   dashboard: null,
   settings: null,
-  history: []
+  history: [],
+  deliveryHistory: []
 };
 
 async function request(url, options = {}) {
@@ -44,6 +45,44 @@ function fillSettingsForm(settings) {
     field.value = String(value);
   });
   document.getElementById("botTokenStatus").value = settings.telegram.botTokenConfigured ? "已配置" : "未配置";
+}
+
+function renderDeliveryHistory() {
+  const deliveryList = document.getElementById("deliveryList");
+  const sendStatus = document.getElementById("sendStatus");
+  deliveryList.innerHTML = "";
+
+  if (!state.deliveryHistory.length) {
+    deliveryList.innerHTML = '<div class="history-item"><p>还没有发送记录。</p></div>';
+    sendStatus.textContent = "最近一次发送状态会显示在这里。";
+    return;
+  }
+
+  const latest = state.deliveryHistory[0];
+  sendStatus.textContent = latest.ok
+    ? `最近一次发送成功：${new Date(latest.createdAt).toLocaleString()}`
+    : `最近一次发送失败：${latest.error || "未知错误"}`;
+
+  state.deliveryHistory.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "history-item";
+
+    const summary = document.createElement("p");
+    summary.textContent = item.ok
+      ? `${item.trigger === "scheduled" ? "定时发送" : "手动发送"}已完成`
+      : `${item.trigger === "scheduled" ? "定时发送" : "手动发送"}失败`;
+
+    const detail = document.createElement("p");
+    detail.className = "muted";
+    detail.textContent = item.ok ? item.preview : (item.error || "发送失败");
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    meta.textContent = `${new Date(item.createdAt).toLocaleString()} · ${item.mode}`;
+
+    card.append(summary, detail, meta);
+    deliveryList.appendChild(card);
+  });
 }
 
 function renderDashboard() {
@@ -120,8 +159,10 @@ async function loadDashboard() {
   state.dashboard = data;
   state.settings = data.settings;
   state.history = data.history;
+  state.deliveryHistory = data.deliveryHistory || [];
   renderDashboard();
   renderHistory();
+  renderDeliveryHistory();
   fillSettingsForm(data.settings);
 }
 
@@ -133,11 +174,15 @@ function bindEvents() {
 
   document.getElementById("runCronBtn").addEventListener("click", async () => {
     const result = await request("/api/cron/daily", { method: "POST" });
+    state.deliveryHistory = result.telegram?.deliveryHistory || state.deliveryHistory;
+    renderDeliveryHistory();
     showToast(result.telegram?.message || "已执行每日发送");
   });
 
   document.getElementById("sendTelegramBtn").addEventListener("click", async () => {
     const result = await request("/api/telegram/test", { method: "POST" });
+    state.deliveryHistory = result.deliveryHistory || state.deliveryHistory;
+    renderDeliveryHistory();
     showToast(result.message || "测试发送完成");
   });
 
