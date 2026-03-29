@@ -707,18 +707,36 @@ function buildInterpretationPrompt(topic, settings) {
   return [
     `用户在 ${settings.profile.city} 工作，想把热点转述给在 ${settings.parents.hometown} 的父母。`,
     "请对下面这个中文热点做实时智能解读，语气克制、易懂、适合家庭聊天。",
+    "你只能依据我给你的标题、来源和链接文本本身进行审慎解读，不能调用外部记忆补充事实，不能把它联想成另一条新闻。",
     "返回严格 JSON，不要 markdown 代码块，不要额外解释。",
     '字段格式：{"summary":"","whyHot":"","talkingPoints":["","",""],"familyAngle":"","riskNote":""}',
-    "summary 用 80 到 140 字概括这条热点在说什么。",
-    "whyHot 说明为什么它现在值得关注。",
+    "summary 用 80 到 140 字概括这条标题大概在说什么；如果信息不足，请明确写“仅从标题判断”。",
+    "whyHot 说明为什么它现在值得关注，也只能基于标题判断。",
     "talkingPoints 给 3 条简洁切口，每条 18 到 40 字。",
     "familyAngle 说明怎么把它聊给父母听，务必自然。",
     "riskNote 说明这条内容是否可能有标题党、信息不完整或仍在发展中，保持中性。",
-    "不要夸张，不要写成营销文案，不要编造细节。",
+    "不要夸张，不要写成营销文案，不要编造细节，不要出现标题里没有的人名、地名、机构或事件。",
     `标题：${topic.title}`,
     `来源：${topic.sourceLabel || topic.source || "中文互联网"}`,
     `链接：${topic.url || "无"}`
   ].join("\n");
+}
+
+function extractTopicKeywords(title) {
+  return Array.from(
+    new Set(
+      (String(title || "").match(/[\u4e00-\u9fffA-Za-z0-9]{2,}/g) || []).filter(
+        (item) => item.length >= 2 && !/^(今天|最近|这个|那个|新闻|热点|标题|出现|进行|有关|一个|什么)$/.test(item)
+      )
+    )
+  ).slice(0, 6);
+}
+
+function validateInterpretation(topic, payload) {
+  const haystack = [payload.summary, payload.whyHot, payload.familyAngle, payload.riskNote, ...(payload.talkingPoints || [])].join(" ");
+  const keywords = extractTopicKeywords(topic.title);
+  if (!keywords.length) return true;
+  return keywords.some((keyword) => haystack.includes(keyword));
 }
 
 function buildFallbackInterpretation(topic) {
@@ -772,6 +790,9 @@ async function generateInterpretationWithOpenAI(fetchImpl, settings, topic, apiK
 
   const payload = await response.json();
   const parsed = extractJsonObject(extractResponseText(payload));
+  if (!validateInterpretation(topic, parsed)) {
+    throw new Error("AI 解读与标题不一致，已改用保守模式");
+  }
   return {
     ok: true,
     mode: "openai",
@@ -820,6 +841,9 @@ async function generateInterpretationWithGoogleGemma(fetchImpl, settings, topic,
     throw new Error("Google Gemma 没有返回可解析内容");
   }
   const parsed = extractJsonObject(rawText);
+  if (!validateInterpretation(topic, parsed)) {
+    throw new Error("AI 解读与标题不一致，已改用保守模式");
+  }
   return {
     ok: true,
     mode: "google",
