@@ -1,0 +1,9 @@
+{
+  "name": "family-connection-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A lightweight family connection assistant demo with web UI and WeChat service notification hooks.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

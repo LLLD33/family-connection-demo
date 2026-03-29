@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>亲情联系助手 Demo</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">Family Connection Demo</p>
+          <h1>亲情联系助手</h1>
+          <p class="muted">帮你用最低成本，持续把“想到父母”变成“真的联系上”。</p>
+        </div>
+        <div class="sidebar-card">
+          <p class="sidebar-label">今天的目标</p>
+          <div id="todayDate" class="sidebar-date"></div>
+          <p id="topicSummary" class="sidebar-topic"></p>
+        </div>
+        <div class="sidebar-card accent">
+          <p class="sidebar-label">微信服务通知</p>
+          <p id="wechatMode">当前为 mock 模式</p>
+          <button id="sendWechatBtn" class="ghost-button">发送一条测试通知</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Today</p>
+            <h2 id="heroTitle">今天先轻松联系一下爸妈</h2>
+            <p id="heroSummary" class="hero-summary"></p>
+          </div>
+          <div class="hero-actions">
+            <button id="refreshBtn" class="primary-button">刷新今日建议</button>
+            <button id="runCronBtn" class="secondary-button">模拟每日定时发送</button>
+          </div>
+        </section>
+
+        <section class="grid two-up">
+          <article class="card">
+            <div class="card-header">
+              <h3>今日建议</h3>
+              <span id="dayTag" class="tag"></span>
+            </div>
+            <ul id="checklist" class="checklist"></ul>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <h3>最近记忆</h3>
+            </div>
+            <p id="lastSummary" class="body-copy"></p>
+            <div id="fragmentList" class="fragment-list"></div>
+          </article>
+        </section>
+
+        <section class="grid two-up">
+          <article class="card">
+            <div class="card-header">
+              <h3>可直接发的话</h3>
+            </div>
+            <div id="suggestionList" class="suggestion-list"></div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <h3>联系记录</h3>
+            </div>
+            <form id="historyForm" class="stack-form">
+              <label>
+                今天聊了什么
+                <textarea name="summary" rows="4" placeholder="比如：聊了今天吃什么，顺带问了爸爸最近累不累"></textarea>
+              </label>
+              <label>
+                下次可聊
+                <input name="nextIdea" placeholder="比如：问妈妈那道菜怎么做" />
+              </label>
+              <div class="inline-fields">
+                <label>
+                  渠道
+                  <select name="channel">
+                    <option value="text">文字</option>
+                    <option value="voice">语音</option>
+                    <option value="video">视频</option>
+                  </select>
+                </label>
+                <label>
+                  状态
+                  <select name="mood">
+                    <option value="good">顺畅</option>
+                    <option value="normal">普通</option>
+                    <option value="short">很短</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit" class="primary-button">保存本次联系</button>
+            </form>
+            <div id="historyList" class="history-list"></div>
+          </article>
+        </section>
+
+        <section class="card settings-card">
+          <div class="card-header">
+            <h3>设置</h3>
+            <p class="muted">支持本地保存。微信配置可以先保留 mock 模式，后续填真实参数再接入。</p>
+          </div>
+          <form id="settingsForm" class="settings-grid">
+            <label>
+              你的城市
+              <input name="profile.city" value="东京" />
+            </label>
+            <label>
+              联系时间窗
+              <input name="profile.contactWindow" value="20:00-22:00" />
+            </label>
+            <label>
+              爸爸称呼
+              <input name="parents.fatherName" value="爸爸" />
+            </label>
+            <label>
+              妈妈称呼
+              <input name="parents.motherName" value="妈妈" />
+            </label>
+            <label>
+              老家/父母所在城市
+              <input name="parents.hometown" value="常州" />
+            </label>
+            <label>
+              反向索取频率
+              <input name="cadence.askForHelpEvery" type="number" min="1" value="3" />
+            </label>
+            <label>
+              微信模式
+              <select name="wechat.mode">
+                <option value="mock">mock</option>
+                <option value="subscribe">subscribe</option>
+              </select>
+            </label>
+            <label>
+              启用微信通知
+              <select name="wechat.enabled">
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </label>
+            <label>
+              AppID
+              <input name="wechat.appId" />
+            </label>
+            <label>
+              AppSecret
+              <input name="wechat.appSecret" />
+            </label>
+            <label>
+              Template ID
+              <input name="wechat.templateId" />
+            </label>
+            <label>
+              OpenID
+              <input name="wechat.openId" />
+            </label>
+            <label class="full-span">
+              你的备注
+              <input name="profile.notes" value="工作日下班后容易累，希望低成本维持联系。" />
+            </label>
+            <button type="submit" class="primary-button">保存设置</button>
+          </form>
+        </section>
+
+        <section class="card docs-card">
+          <div class="card-header">
+            <h3>部署与 GitHub</h3>
+          </div>
+          <ol class="steps">
+            <li>本地运行 `node server.js`，打开 `http://127.0.0.1:3000`。</li>
+            <li>如果要自动推送微信提醒，可把 `/api/cron/daily` 挂到系统计划任务或云端 cron。</li>
+            <li>GitHub 仓库只要把当前目录推上去即可，后续可以接 Railway、Render 或自己的服务器。</li>
+          </ol>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
