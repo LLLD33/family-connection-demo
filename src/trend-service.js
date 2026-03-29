@@ -1,10 +1,10 @@
-const SOURCE_ORDER = ["douyin", "bilibili", "zhihu", "youtube"];
+const SOURCE_ORDER = ["douyin", "bilibili", "zhihu", "xiaohongshu"];
 
 export const SOURCE_LABELS = {
   douyin: "抖音",
   bilibili: "B站",
   zhihu: "知乎",
-  youtube: "YouTube"
+  xiaohongshu: "小红书"
 };
 
 const DEFAULT_HEADERS = {
@@ -38,7 +38,7 @@ function decodeUnicodeEscapes(value) {
 function normalizeTopicTitle(value) {
   return normalizeText(decodeUnicodeEscapes(value))
     .replace(/^[#\d\-\.\s]+/, "")
-    .replace(/[|｜]\s*(抖音|知乎|YouTube|B站).*$/i, "")
+    .replace(/[|｜]\s*(抖音|知乎|B站|小红书).*$/i, "")
     .trim();
 }
 
@@ -63,8 +63,8 @@ function isUsefulTopic(title) {
     "打开",
     "抖音",
     "知乎",
-    "YouTube",
     "Bilibili",
+    "小红书",
     "广告",
     "服务条款",
     "隐私",
@@ -73,7 +73,12 @@ function isUsefulTopic(title) {
     "推荐",
     "视频",
     "直播",
-    "频道"
+    "频道",
+    "发现",
+    "发布",
+    "通知",
+    "创作中心",
+    "业务合作"
   ];
   return !blacklist.includes(title);
 }
@@ -103,41 +108,6 @@ function collectByKey(value, targetKey, results = []) {
   return results;
 }
 
-function extractBalancedJson(input, marker) {
-  const markerIndex = input.indexOf(marker);
-  if (markerIndex === -1) return null;
-  const start = input.indexOf("{", markerIndex);
-  if (start === -1) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = start; index < input.length; index += 1) {
-    const char = input[index];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-    if (char === "{") depth += 1;
-    if (char === "}") depth -= 1;
-    if (depth === 0) return input.slice(start, index + 1);
-  }
-
-  return null;
-}
-
 async function fetchText(url, fetchImpl) {
   const response = await fetchImpl(url, { headers: DEFAULT_HEADERS });
   if (!response.ok) {
@@ -154,15 +124,14 @@ async function fetchJson(url, fetchImpl) {
   return response.json();
 }
 
-function buildTopic(source, index, title, url, meta) {
+function buildTopic(source, index, title, url) {
   return {
     id: `${source}_${Date.now()}_${index + 1}`,
     source,
     sourceLabel: SOURCE_LABELS[source] || source,
     rank: index + 1,
     title: normalizeTopicTitle(title),
-    url,
-    meta: normalizeText(meta || "")
+    url
   };
 }
 
@@ -174,8 +143,7 @@ async function fetchBilibiliTopics(fetchImpl, limit) {
       "bilibili",
       index,
       item.title,
-      item.short_link_v2 || item.short_link || `https://www.bilibili.com/video/${item.bvid}`,
-      `${item.owner?.name || "UP 主"} · ${(item.stat?.view || 0).toLocaleString()} 播放`
+      item.short_link_v2 || item.short_link || `https://www.bilibili.com/video/${item.bvid}`
     )
   );
   return {
@@ -209,7 +177,7 @@ function extractDouyinCandidateTitles(html, limit) {
     [...rawMatches, ...visibleLines]
       .filter(isUsefulTopic)
       .slice(0, limit * 4)
-      .map((title, index) => buildTopic("douyin", index, title, `https://www.douyin.com/search/${encodeURIComponent(title)}`, "抖音热度候选"))
+      .map((title, index) => buildTopic("douyin", index, title, `https://www.douyin.com/search/${encodeURIComponent(title)}`))
   ).slice(0, limit);
 }
 
@@ -225,7 +193,7 @@ async function fetchDouyinTopics(fetchImpl, limit) {
       const words = dedupeTopics(
         collectByKey(hotJson, "word")
           .map((value, index) =>
-            buildTopic("douyin", index, value, `https://www.douyin.com/search/${encodeURIComponent(normalizeTopicTitle(value))}`, "抖音热搜")
+            buildTopic("douyin", index, value, `https://www.douyin.com/search/${encodeURIComponent(normalizeTopicTitle(value))}`)
           )
           .filter((item) => isUsefulTopic(item.title))
       ).slice(0, limit);
@@ -256,7 +224,7 @@ function extractZhihuCandidateTitles(html, limit) {
   return dedupeTopics(
     visibleLines
       .slice(0, limit * 4)
-      .map((title, index) => buildTopic("zhihu", index, title, `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(title)}`, "知乎热榜候选"))
+      .map((title, index) => buildTopic("zhihu", index, title, `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(title)}`))
   ).slice(0, limit);
 }
 
@@ -272,61 +240,33 @@ async function fetchZhihuTopics(fetchImpl, limit) {
   };
 }
 
-function extractYoutubeInitialData(html) {
-  const patterns = [
-    /var ytInitialData = (\{[\s\S]*?\});<\/script>/,
-    /window\["ytInitialData"\] = (\{[\s\S]*?\});/
-  ];
+function extractXiaohongshuCandidateTitles(html, limit) {
+  const visibleLines = extractVisibleLines(html).filter((line) => {
+    if (!isUsefulTopic(line)) return false;
+    if (/^(小红书|推荐|穿搭|美食|彩妆|影视|职场|情感|家居|游戏|旅行|健身)$/.test(line)) return false;
+    if (/^(\d+(\.\d+)?万?|[\d.]+w)$/i.test(line)) return false;
+    if (/^(©|地址：|电话：|沪ICP备|营业执照|个性化推荐算法)/.test(line)) return false;
+    return true;
+  });
 
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) {
-      try {
-        return JSON.parse(match[1]);
-      } catch (_error) {
-        // ignore and continue
-      }
-    }
-  }
-
-  const balanced = extractBalancedJson(html, "ytInitialData");
-  if (!balanced) return null;
-  try {
-    return JSON.parse(balanced);
-  } catch (_error) {
-    return null;
-  }
+  return dedupeTopics(
+    visibleLines
+      .slice(0, limit * 6)
+      .map((title, index) =>
+        buildTopic("xiaohongshu", index, title, `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(title)}`)
+      )
+  ).slice(0, limit);
 }
 
-async function fetchYoutubeTopics(fetchImpl, limit) {
-  const html = await fetchText("https://www.youtube.com/feed/trending", fetchImpl);
-  const initialData = extractYoutubeInitialData(html);
-  const renderers = dedupeTopics(
-    collectByKey(initialData, "videoRenderer")
-      .map((renderer, index) => {
-        const title = renderer?.title?.runs?.map((item) => item.text).join("") || renderer?.title?.simpleText || "";
-        const videoId = renderer?.videoId || "";
-        const channelName =
-          renderer?.ownerText?.runs?.map((item) => item.text).join("") ||
-          renderer?.shortBylineText?.runs?.map((item) => item.text).join("") ||
-          "YouTube";
-        return buildTopic(
-          "youtube",
-          index,
-          title,
-          videoId ? `https://www.youtube.com/watch?v=${videoId}` : "https://www.youtube.com/feed/trending",
-          channelName
-        );
-      })
-      .filter((item) => isUsefulTopic(item.title))
-  ).slice(0, limit);
-
+async function fetchXiaohongshuTopics(fetchImpl, limit) {
+  const html = await fetchText("https://www.xiaohongshu.com/explore", fetchImpl);
+  const topics = extractXiaohongshuCandidateTitles(html, limit);
   return {
-    source: "youtube",
-    ok: renderers.length > 0,
-    count: renderers.length,
-    message: renderers.length ? "已抓到 YouTube trending" : "YouTube 匿名 trending 页面当前只返回搜索引导，没有可解析的视频标题",
-    topics: renderers
+    source: "xiaohongshu",
+    ok: topics.length > 0,
+    count: topics.length,
+    message: topics.length ? "已抓到小红书首页热门标题" : "小红书页面可访问，但没有解析出可用标题",
+    topics
   };
 }
 
@@ -350,7 +290,7 @@ export async function fetchTrendSnapshot(fetchImpl, settings) {
     settleSource("douyin", () => fetchDouyinTopics(fetchImpl, limit)),
     settleSource("bilibili", () => fetchBilibiliTopics(fetchImpl, limit)),
     settleSource("zhihu", () => fetchZhihuTopics(fetchImpl, limit)),
-    settleSource("youtube", () => fetchYoutubeTopics(fetchImpl, limit))
+    settleSource("xiaohongshu", () => fetchXiaohongshuTopics(fetchImpl, limit))
   ]);
 
   const sourceTopics = {};
@@ -444,7 +384,7 @@ function buildOpenAIInput(snapshot, settings) {
   snapshot.sourceStatus.forEach((item) => {
     lines.push(`${item.sourceLabel}: ${item.ok ? `成功抓到 ${item.count} 条` : `抓取失败（${item.message}）`}`);
     (snapshot.sourceTopics[item.source] || []).slice(0, 6).forEach((topic) => {
-      lines.push(`- [${topic.sourceLabel} #${topic.rank}] ${topic.title}${topic.meta ? ` | ${topic.meta}` : ""}`);
+      lines.push(`- [${topic.sourceLabel} #${topic.rank}] ${topic.title}`);
     });
     lines.push("");
   });
