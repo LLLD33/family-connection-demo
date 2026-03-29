@@ -41,24 +41,52 @@ function resolveTelegramConfig(settings, env) {
   };
 }
 
-function resolveOpenAIConfig(settings, env) {
+function normalizeAiSettings(settings) {
+  const next = {
+    ...settings,
+    openai: { ...(settings.openai || {}) }
+  };
+  const provider = next.openai.provider || "google";
+  let model = next.openai.model || "";
+
+  if (provider === "google" && (!model || /^gpt-/i.test(model))) {
+    model = "gemma-3-27b-it";
+  }
+  if (provider === "openai" && (!model || /^gemma/i.test(model))) {
+    model = "gpt-5.4";
+  }
+
+  next.openai.provider = provider;
+  next.openai.model = model;
+  next.openai.reasoningEffort = next.openai.reasoningEffort || "medium";
+
+  return next;
+}
+
+function resolveAiConfig(settings, env) {
+  const normalized = normalizeAiSettings(settings);
   return {
-    ...settings.openai,
-    apiKey: env.OPENAI_API_KEY || ""
+    ...normalized.openai,
+    googleApiKey: env.GOOGLE_API_KEY || "",
+    openAiApiKey: env.OPENAI_API_KEY || ""
   };
 }
 
 function redactSettings(settings, env) {
+  const normalized = normalizeAiSettings(settings);
+  const provider = normalized.openai.provider;
   return {
-    ...settings,
+    ...normalized,
     telegram: {
-      ...settings.telegram,
+      ...normalized.telegram,
       botToken: "",
-      botTokenConfigured: Boolean(settings.telegram.botToken || env.TELEGRAM_BOT_TOKEN)
+      botTokenConfigured: Boolean(normalized.telegram.botToken || env.TELEGRAM_BOT_TOKEN)
     },
     openai: {
-      ...settings.openai,
-      apiKeyConfigured: Boolean(env.OPENAI_API_KEY)
+      ...normalized.openai,
+      apiKeyConfigured: provider === "google" ? Boolean(env.GOOGLE_API_KEY) : Boolean(env.OPENAI_API_KEY),
+      googleApiKeyConfigured: Boolean(env.GOOGLE_API_KEY),
+      openAiApiKeyConfigured: Boolean(env.OPENAI_API_KEY)
     }
   };
 }
@@ -159,7 +187,7 @@ function buildPromptPack(settings, history, targetDate) {
 }
 
 function mergeSettings(current, body) {
-  return {
+  return normalizeAiSettings({
     ...current,
     ...body,
     profile: { ...current.profile, ...(body.profile || {}) },
@@ -168,7 +196,7 @@ function mergeSettings(current, body) {
     telegram: { ...current.telegram, ...(body.telegram || {}) },
     trends: { ...current.trends, ...(body.trends || {}) },
     openai: { ...current.openai, ...(body.openai || {}) }
-  };
+  });
 }
 
 function sanitizeHistoryRecord(input) {
@@ -294,7 +322,7 @@ async function refreshTrendReports(settings, env, trigger) {
   const reports = await readStore(env, TREND_REPORTS_KEY, []);
   const report = await generateTrendReport(fetch, settings, {
     trigger,
-    openAiApiKey: resolveOpenAIConfig(settings, env).apiKey
+    aiConfig: resolveAiConfig(settings, env)
   });
   const next = [report, ...reports].slice(0, 20);
   await writeStore(env, TREND_REPORTS_KEY, next);

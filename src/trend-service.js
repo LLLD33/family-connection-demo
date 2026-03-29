@@ -404,7 +404,33 @@ function buildFallbackScripts(flatTopics, settings) {
   });
 }
 
-function buildOpenAIInput(snapshot, settings) {
+function getAiProviderLabel(provider) {
+  return provider === "google" ? "Google Gemma" : provider === "openai" ? "OpenAI" : "AI";
+}
+
+function resolveAiOptions(settings, options = {}) {
+  const configured = settings?.openai || {};
+  const provider = options.provider || configured.provider || "google";
+  let model = options.model || configured.model || "";
+
+  if (provider === "google" && (!model || /^gpt-/i.test(model))) {
+    model = "gemma-3-27b-it";
+  }
+  if (provider === "openai" && (!model || /^gemma/i.test(model))) {
+    model = "gpt-5.4";
+  }
+
+  return {
+    provider,
+    providerLabel: getAiProviderLabel(provider),
+    model,
+    reasoningEffort: options.reasoningEffort || configured.reasoningEffort || "medium",
+    googleApiKey: options.googleApiKey || "",
+    openAiApiKey: options.openAiApiKey || options.apiKey || ""
+  };
+}
+
+function buildAiInput(snapshot, settings) {
   const lines = [];
   snapshot.sourceStatus.forEach((item) => {
     lines.push(`${item.sourceLabel}: ${item.ok ? `成功抓到 ${item.count} 条` : `抓取失败（${item.message}）`}`);
@@ -437,6 +463,16 @@ function extractResponseText(payload) {
   (payload?.output || []).forEach((item) => {
     (item.content || []).forEach((content) => {
       if (typeof content?.text === "string") parts.push(content.text);
+    });
+  });
+  return parts.join("\n").trim();
+}
+
+function extractGeminiText(payload) {
+  const parts = [];
+  (payload?.candidates || []).forEach((candidate) => {
+    (candidate?.content?.parts || []).forEach((part) => {
+      if (typeof part?.text === "string") parts.push(part.text);
     });
   });
   return parts.join("\n").trim();
@@ -478,7 +514,7 @@ async function generateScriptsWithOpenAI(fetchImpl, settings, snapshot, apiKey) 
           content: [
             {
               type: "input_text",
-              text: buildOpenAIInput(snapshot, settings)
+              text: buildAiInput(snapshot, settings)
             }
           ]
         }
@@ -517,25 +553,150 @@ async function generateScriptsWithOpenAI(fetchImpl, settings, snapshot, apiKey) 
   };
 }
 
+async function generateScriptsWithGoogleGemma(fetchImpl, settings, snapshot, apiKey, model) {
+  const response = await fetchImpl(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": apiKey
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: [
+                  "你是资深中文短视频文案策划，同时懂怎么把热点变成适合和父母聊的轻量开场。",
+                  "",
+                  buildAiInput(snapshot, settings)
+                ].join("\n")
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          maxOutputTokens: 2200
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Google Gemma 请求失败：HTTP ${response.status} ${detail}`);
+  }
+
+  const payload = await response.json();
+  const rawText = extractGeminiText(payload);
+  if (!rawText) {
+    const reason = payload?.promptFeedback?.blockReason || payload?.candidates?.[0]?.finishReason || "模型没有返回文本";
+    throw new Error(`Google Gemma 请求失败：${reason}`);
+  }
+
+  const parsed = extractJsonObject(rawText);
+  const scripts = Array.isArray(parsed?.scripts) ? parsed.scripts : [];
+
+  return {
+    ok: true,
+    mode: "google",
+    provider: "google",
+    providerLabel: "Google Gemma",
+    model,
+    message: "已用 Google Gemma 3 27B 生成 3 条口播文案",
+    summary: normalizeText(parsed?.summary || ""),
+    scripts: scripts.map((item, index) => ({
+      id: `google_${Date.now()}_${index + 1}`,
+      title: normalizeTopicTitle(item.title),
+      hotReason: normalizeText(item.hotReason || ""),
+      hook: normalizeText(item.hook || ""),
+      spokenScript: normalizeText(item.spokenScript || ""),
+      conversationStarter: normalizeText(item.conversationStarter || ""),
+      parentAngle: normalizeText(item.parentAngle || ""),
+      sourceMix: Array.isArray(item.sourceMix) ? item.sourceMix.map((value) => normalizeText(value)) : [],
+      sourceUrls: Array.isArray(item.sourceUrls) ? item.sourceUrls.map((value) => normalizeText(value)) : []
+    }))
+  };
+}
+
 export async function generateTrendReport(fetchImpl, settings, options = {}) {
   const snapshot = await fetchTrendSnapshot(fetchImpl, settings);
   const trigger = options.trigger || "manual";
   const scriptCount = Number(settings?.trends?.scriptCount || 3);
-  const apiKey = options.openAiApiKey || "";
+  const aiOptions = resolveAiOptions(settings, options.aiConfig || {});
   const noTopicsMessage = "这一轮没有从四个平台抓到可用标题，可能是源站限流或地区访问受限。";
 
   let ai;
-  if (apiKey) {
-    try {
-      ai = await generateScriptsWithOpenAI(fetchImpl, settings, snapshot, apiKey);
-      ai.scripts = ai.scripts.slice(0, scriptCount);
-    } catch (error) {
+  if (aiOptions.provider === "google") {
+    if (aiOptions.googleApiKey) {
+      try {
+        ai = await generateScriptsWithGoogleGemma(fetchImpl, settings, snapshot, aiOptions.googleApiKey, aiOptions.model);
+        ai.scripts = ai.scripts.slice(0, scriptCount);
+      } catch (error) {
+        ai = {
+          ok: false,
+          mode: "fallback",
+          provider: aiOptions.provider,
+          providerLabel: aiOptions.providerLabel,
+          model: aiOptions.model,
+          message: snapshot.flatTopics.length ? error.message : noTopicsMessage,
+          summary: snapshot.flatTopics.length ? "Google Gemma 暂时不可用，已退回模板生成。" : noTopicsMessage,
+          scripts: buildFallbackScripts(snapshot.flatTopics, settings)
+        };
+      }
+    } else {
       ai = {
         ok: false,
         mode: "fallback",
-        model: settings?.openai?.model || "gpt-5.4",
-        message: snapshot.flatTopics.length ? error.message : noTopicsMessage,
-        summary: snapshot.flatTopics.length ? "OpenAI 暂时不可用，已退回模板生成。" : noTopicsMessage,
+        provider: aiOptions.provider,
+        providerLabel: aiOptions.providerLabel,
+        model: aiOptions.model,
+        message: snapshot.flatTopics.length ? "未配置 GOOGLE_API_KEY，已使用本地模板生成。" : noTopicsMessage,
+        summary: snapshot.flatTopics.length ? "当前没有 Google AI 密钥，先用本地模板保底生成可聊话题。" : noTopicsMessage,
+        scripts: buildFallbackScripts(snapshot.flatTopics, settings)
+      };
+    }
+  } else if (aiOptions.provider === "openai") {
+    if (aiOptions.openAiApiKey) {
+      try {
+        ai = await generateScriptsWithOpenAI(
+          fetchImpl,
+          {
+            ...settings,
+            openai: {
+              ...(settings.openai || {}),
+              model: aiOptions.model,
+              reasoningEffort: aiOptions.reasoningEffort
+            }
+          },
+          snapshot,
+          aiOptions.openAiApiKey
+        );
+        ai.provider = aiOptions.provider;
+        ai.providerLabel = aiOptions.providerLabel;
+        ai.scripts = ai.scripts.slice(0, scriptCount);
+      } catch (error) {
+        ai = {
+          ok: false,
+          mode: "fallback",
+          provider: aiOptions.provider,
+          providerLabel: aiOptions.providerLabel,
+          model: aiOptions.model,
+          message: snapshot.flatTopics.length ? error.message : noTopicsMessage,
+          summary: snapshot.flatTopics.length ? "OpenAI 暂时不可用，已退回模板生成。" : noTopicsMessage,
+          scripts: buildFallbackScripts(snapshot.flatTopics, settings)
+        };
+      }
+    } else {
+      ai = {
+        ok: false,
+        mode: "fallback",
+        provider: aiOptions.provider,
+        providerLabel: aiOptions.providerLabel,
+        model: aiOptions.model,
+        message: snapshot.flatTopics.length ? "未配置 OPENAI_API_KEY，已使用本地模板生成。" : noTopicsMessage,
+        summary: snapshot.flatTopics.length ? "当前没有 OpenAI 密钥，先用本地模板保底生成可聊话题。" : noTopicsMessage,
         scripts: buildFallbackScripts(snapshot.flatTopics, settings)
       };
     }
@@ -543,9 +704,11 @@ export async function generateTrendReport(fetchImpl, settings, options = {}) {
     ai = {
       ok: false,
       mode: "fallback",
-      model: settings?.openai?.model || "gpt-5.4",
-      message: snapshot.flatTopics.length ? "未配置 OPENAI_API_KEY，已使用本地模板生成。" : noTopicsMessage,
-      summary: snapshot.flatTopics.length ? "当前没有 OpenAI 密钥，先用本地模板保底生成可聊话题。" : noTopicsMessage,
+      provider: aiOptions.provider,
+      providerLabel: aiOptions.providerLabel,
+      model: aiOptions.model,
+      message: snapshot.flatTopics.length ? `暂不支持的 AI 提供方：${aiOptions.provider}` : noTopicsMessage,
+      summary: snapshot.flatTopics.length ? "当前 AI 提供方不可用，已退回模板生成。" : noTopicsMessage,
       scripts: buildFallbackScripts(snapshot.flatTopics, settings)
     };
   }
@@ -558,6 +721,8 @@ export async function generateTrendReport(fetchImpl, settings, options = {}) {
     ai: {
       ok: ai.ok,
       mode: ai.mode,
+      provider: ai.provider || aiOptions.provider,
+      providerLabel: ai.providerLabel || aiOptions.providerLabel,
       model: ai.model,
       message: ai.message
     },
@@ -577,7 +742,7 @@ export function buildTrendTelegramMessage(report) {
   const lines = [
     "*热点共聊更新*",
     `生成时间：${report.createdAt}`,
-    `模式：${report.ai.mode === "openai" ? `${report.ai.model}` : "本地保底模板"}`,
+    `模式：${report.ai.mode !== "fallback" ? `${report.ai.providerLabel || "AI"} / ${report.ai.model}` : "本地保底模板"}`,
     report.summary || "刚帮你整理了一轮新热点。",
     ""
   ];

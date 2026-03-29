@@ -45,6 +45,15 @@ function formatDateTime(value) {
   });
 }
 
+function getAiProviderLabel(settings) {
+  return settings?.openai?.provider === "openai" ? "OpenAI" : "Google Gemma";
+}
+
+function formatAiModeLabel(ai) {
+  if (!ai || ai.mode === "fallback") return "本地模板";
+  return `${ai.providerLabel || "AI"} / ${ai.model}`;
+}
+
 function fillSettingsForm(settings) {
   const form = document.getElementById("settingsForm");
   Array.from(form.elements).forEach((field) => {
@@ -54,7 +63,7 @@ function fillSettingsForm(settings) {
     field.value = String(value);
   });
   document.getElementById("botTokenStatus").value = settings.telegram.botTokenConfigured ? "已配置" : "未配置";
-  document.getElementById("openAiStatus").value = settings.openai.apiKeyConfigured ? "已配置" : "未配置";
+  document.getElementById("openAiStatus").value = `${getAiProviderLabel(settings)}：${settings.openai.apiKeyConfigured ? "已配置" : "未配置"}`;
 }
 
 function renderDeliveryHistory() {
@@ -310,7 +319,7 @@ function renderTrendHistory() {
 
     const detail = document.createElement("p");
     detail.className = "muted";
-    detail.textContent = `${report.ai.mode === "openai" ? report.ai.model : "本地模板"} · ${report.summary || "已完成生成"}`;
+    detail.textContent = `${formatAiModeLabel(report.ai)} · ${report.summary || "已完成生成"}`;
 
     const meta = document.createElement("div");
     meta.className = "history-meta";
@@ -333,20 +342,20 @@ function renderTrendPanel() {
     trendMetaTag.textContent = "等待首次生成";
     trendSummary.textContent = "点击刷新后，这里会展示本轮热点摘要、AI 模式和抓取成功情况。";
     aiModeStatus.textContent = state.settings?.openai?.apiKeyConfigured
-      ? `OpenAI 已就绪，默认模型 ${state.settings.openai.model}`
-      : "OpenAI 还没配置，首次生成会先用本地模板保底。";
+      ? `${getAiProviderLabel(state.settings)} 已就绪，默认模型 ${state.settings.openai.model}`
+      : `${getAiProviderLabel(state.settings)} 还没配置 API Key，首次生成会先用本地模板保底。`;
     renderSourceBoard(null);
     renderScriptList(null);
     renderTrendHistory();
     return;
   }
 
-  trendMetaTag.textContent = `${report.ai.mode === "openai" ? report.ai.model : "本地模板"} · ${report.topicCount} 条候选`;
+  trendMetaTag.textContent = `${formatAiModeLabel(report.ai)} · ${report.topicCount} 条候选`;
   trendSummary.textContent = report.summary || "本轮热点已经整理完成。";
   heroTitle.textContent = "这一轮最值得和爸妈聊的 3 个热点已经备好";
   heroSummary.textContent = `${report.summary || "热点已整理完成。"} 这轮共抓到 ${report.topicCount} 个候选话题，建议你优先挑一条最轻松的先开口。`;
-  aiModeStatus.textContent = report.ai.mode === "openai"
-    ? `当前用 ${report.ai.model} 生成，${report.ai.message}`
+  aiModeStatus.textContent = report.ai.mode !== "fallback"
+    ? `当前用 ${formatAiModeLabel(report.ai)} 生成，${report.ai.message}`
     : `当前是本地保底生成，原因：${report.ai.message}`;
 
   renderSourceBoard(report);
@@ -397,7 +406,7 @@ function bindEvents() {
   document.getElementById("refreshTrendsBtn").addEventListener("click", async () => {
     const result = await request("/api/trends/refresh", { method: "POST" });
     await loadDashboard();
-    showToast(result.report?.ai?.mode === "openai" ? "热点和 AI 文案都刷新好了" : (result.report?.ai?.message || "热点已刷新"));
+    showToast(result.report?.ai?.mode !== "fallback" ? "热点和 AI 文案都刷新好了" : (result.report?.ai?.message || "热点已刷新"));
   });
 
   document.getElementById("pushTrendsBtn").addEventListener("click", async () => {

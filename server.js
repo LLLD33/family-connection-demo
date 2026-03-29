@@ -65,28 +65,56 @@ function resolveTelegramConfig(settings) {
   };
 }
 
-function resolveOpenAIConfig(settings) {
+function normalizeAiSettings(settings) {
+  const next = {
+    ...settings,
+    openai: { ...(settings.openai || {}) }
+  };
+  const provider = next.openai.provider || "google";
+  let model = next.openai.model || "";
+
+  if (provider === "google" && (!model || /^gpt-/i.test(model))) {
+    model = "gemma-3-27b-it";
+  }
+  if (provider === "openai" && (!model || /^gemma/i.test(model))) {
+    model = "gpt-5.4";
+  }
+
+  next.openai.provider = provider;
+  next.openai.model = model;
+  next.openai.reasoningEffort = next.openai.reasoningEffort || "medium";
+
+  return next;
+}
+
+function resolveAiConfig(settings) {
+  const normalized = normalizeAiSettings(settings);
   return {
-    ...settings.openai,
-    apiKey: process.env.OPENAI_API_KEY || ""
+    ...normalized.openai,
+    googleApiKey: process.env.GOOGLE_API_KEY || "",
+    openAiApiKey: process.env.OPENAI_API_KEY || ""
   };
 }
 
 function getSettings() {
-  return mergeSettings(defaultSettings, readJson(SETTINGS_FILE));
+  return normalizeAiSettings(mergeSettings(defaultSettings, readJson(SETTINGS_FILE)));
 }
 
 function redactSettings(settings) {
+  const normalized = normalizeAiSettings(settings);
+  const provider = normalized.openai.provider;
   return {
-    ...settings,
+    ...normalized,
     telegram: {
-      ...settings.telegram,
+      ...normalized.telegram,
       botToken: "",
-      botTokenConfigured: Boolean(settings.telegram.botToken || process.env.TELEGRAM_BOT_TOKEN)
+      botTokenConfigured: Boolean(normalized.telegram.botToken || process.env.TELEGRAM_BOT_TOKEN)
     },
     openai: {
-      ...settings.openai,
-      apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY)
+      ...normalized.openai,
+      apiKeyConfigured: provider === "google" ? Boolean(process.env.GOOGLE_API_KEY) : Boolean(process.env.OPENAI_API_KEY),
+      googleApiKeyConfigured: Boolean(process.env.GOOGLE_API_KEY),
+      openAiApiKeyConfigured: Boolean(process.env.OPENAI_API_KEY)
     }
   };
 }
@@ -355,7 +383,7 @@ async function refreshTrendReports(settings, trigger) {
   const reports = readJson(TREND_REPORTS_FILE);
   const report = await generateTrendReport(fetch, settings, {
     trigger,
-    openAiApiKey: resolveOpenAIConfig(settings).apiKey
+    aiConfig: resolveAiConfig(settings)
   });
   const nextReports = [report, ...reports].slice(0, 20);
   writeJson(TREND_REPORTS_FILE, nextReports);
@@ -366,7 +394,7 @@ async function refreshTrendReports(settings, trigger) {
 }
 
 function mergeSettings(current, body) {
-  return {
+  return normalizeAiSettings({
     ...current,
     ...body,
     profile: { ...current.profile, ...(body.profile || {}) },
@@ -379,7 +407,7 @@ function mergeSettings(current, body) {
     },
     trends: { ...current.trends, ...(body.trends || {}) },
     openai: { ...current.openai, ...(body.openai || {}) }
-  };
+  });
 }
 
 const server = http.createServer(async (req, res) => {

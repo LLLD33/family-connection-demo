@@ -143,7 +143,7 @@
           <article class="card settings-card">
             <div class="card-header">
               <h3>设置</h3>
-              <p class="muted">Telegram Bot Token 和 OpenAI API Key 只走服务端环境变量，不会回显到前端。</p>
+              <p class="muted">默认走 Google Gemini API 托管的 Gemma 3 27B。Telegram Bot Token、Google AI API Key、OpenAI API Key 都只走服务端环境变量，不会回显到前端。</p>
             </div>
             <form id="settingsForm" class="settings-grid">
               <label>
@@ -183,11 +183,18 @@
                 <input name="trends.scriptCount" type="number" min="1" max="5" value="3" />
               </label>
               <label>
-                OpenAI 模型
-                <input name="openai.model" value="gpt-5.4" />
+                AI 提供方
+                <select name="openai.provider">
+                  <option value="google">google-gemma</option>
+                  <option value="openai">openai</option>
+                </select>
               </label>
               <label>
-                推理强度
+                AI 模型
+                <input name="openai.model" value="gemma-3-27b-it" />
+              </label>
+              <label>
+                OpenAI 推理强度（仅 OpenAI 生效）
                 <select name="openai.reasoningEffort">
                   <option value="medium">medium</option>
                   <option value="high">high</option>
@@ -231,7 +238,7 @@
                 <input id="botTokenStatus" value="未配置" readonly />
               </label>
               <label class="full-span">
-                OpenAI API Key 状态
+                当前 AI API Key 状态
                 <input id="openAiStatus" value="未配置" readonly />
               </label>
               <label class="full-span">

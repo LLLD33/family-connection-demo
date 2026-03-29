@@ -33,7 +33,8 @@ const defaultSettings = {
     scriptCount: 3
   },
   openai: {
-    model: "gpt-5.4",
+    provider: "google",
+    model: "gemma-3-27b-it",
     reasoningEffort: "medium"
   }
 };

@@ -5,7 +5,7 @@
 它会做三件事：
 
 - 聚合最新抖音、B 站、知乎、小红书标题热点
-- 用 OpenAI 最新旗舰模型生成 3 条适合和父母聊的短视频口播文案
+- 默认用 Google Gemma 3 27B 生成 3 条适合和父母聊的短视频口播文案
 - 记录每一轮生成历史，并支持 Telegram 推送摘要
 
 ## 当前能力
@@ -43,11 +43,28 @@ Cloudflare：
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 ```
 
-### OpenAI
+### Google Gemma 3 27B
 
-热点文案生成默认接 OpenAI Responses API，模型默认值是 `gpt-5.4`。
+热点文案生成默认接 Google Gemini API 托管的 `gemma-3-27b-it`。
 
 本地：
+
+```bash
+set GOOGLE_API_KEY=你的_google_ai_studio_key
+node server.js
+```
+
+Cloudflare：
+
+```bash
+npx wrangler secret put GOOGLE_API_KEY
+```
+
+如果没有配置 `GOOGLE_API_KEY`，系统会退回本地模板保底生成，方便先跑通流程。
+
+### OpenAI（可选兼容）
+
+如果你想切回 OpenAI，也可以把设置页里的 AI 提供方改成 `openai`，再配置：
 
 ```bash
 set OPENAI_API_KEY=你的_openai_api_key
@@ -59,8 +76,6 @@ Cloudflare：
 ```bash
 npx wrangler secret put OPENAI_API_KEY
 ```
-
-如果没有配置 `OPENAI_API_KEY`，系统会退回本地模板保底生成，方便先跑通流程。
 
 ## 主要接口
 
@@ -75,7 +90,7 @@ npx wrangler secret put OPENAI_API_KEY
 ## Cloudflare 部署
 
 - `src/worker.js`: Worker API
-- `src/trend-service.js`: 热点抓取与 OpenAI 生成
+- `src/trend-service.js`: 热点抓取与 AI 文案生成
 - `public/`: 静态页面
 - `wrangler.toml`: Worker 配置
 
@@ -102,4 +117,4 @@ npx wrangler deploy
 
 - 当前四个平台统一只抓标题，不抓正文内容，目的是更稳地生成“和父母聊什么”
 - 抖音、知乎、小红书都属于强反爬平台，所以实现采用“能抓则抓，抓不到就优雅降级”的策略
-- 真实线上效果取决于源站访问情况、地区限制和 OpenAI / Telegram 密钥是否已配置
+- 真实线上效果取决于源站访问情况、地区限制以及 Google AI / OpenAI / Telegram 密钥是否已配置
