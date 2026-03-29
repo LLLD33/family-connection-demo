@@ -1,8 +1,8 @@
 {
-  "name": "family-connection-demo",
+  "name": "family-hot-news-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "A lightweight family connection assistant demo with web UI and Telegram bot notification hooks.",
+  "description": "A family hot news assistant that aggregates trends and generates parent-friendly scripts with Telegram delivery hooks.",
   "scripts": {
     "start": "node server.js",
     "cf:dev": "wrangler dev",

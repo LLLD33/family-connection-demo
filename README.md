@@ -1,14 +1,20 @@
-# 亲情联系助手 Demo
+# 亲情热点陪聊助手
 
-一个可本地运行、也可部署到 Cloudflare 的 Web demo，用来验证“异地子女低成本维持和父母稳定联系”的产品方向。
+一个可本地运行、也可部署到 Cloudflare 的 Web demo。
 
-## 功能
+它会做三件事：
 
-- 每天生成一次联系建议和可直接发送的话术
-- 支持保存联系记录，形成后续话题记忆
-- 提供“反向索取”节奏，避免只会机械关心
-- 支持 Telegram Bot 推送
+- 聚合最新抖音、B 站、知乎、YouTube 热点
+- 用 OpenAI 最新旗舰模型生成 3 条适合和父母聊的短视频口播文案
+- 记录每一轮生成历史，并支持 Telegram 推送摘要
+
+## 当前能力
+
+- 亲情联系节奏建议、联系记录、发送日志
+- 热点抓取接口：`/api/trends/refresh`
+- 热点摘要 Telegram 推送：`/api/trends/push`
 - 本地 JSON 存储，Cloudflare 线上使用 KV
+- Cloudflare 定时任务默认每 6 小时刷新一轮热点
 
 ## 本地启动
 
@@ -16,74 +22,84 @@
 node server.js
 ```
 
-然后打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)
+打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)
 
-## Telegram 推送
+## 环境变量
+
+### Telegram
 
 默认是 `mock` 模式，不会真的发消息。
 
-如果你要接入真实 Telegram 推送：
-
-1. 在页面设置里填入：
-   - `chatId`
-   - `parseMode`
-2. 把 `telegram.enabled` 设为 `true`
-3. 把 `telegram.mode` 设为 `bot`
-4. 把 `Bot Token` 作为服务端密钥保存，不要暴露到前端
-
-### 本地 Node 版
+本地：
 
 ```bash
 set TELEGRAM_BOT_TOKEN=你的_bot_token
 node server.js
 ```
 
-### Cloudflare 线上版
+Cloudflare：
 
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 ```
 
-当前使用的 Telegram Bot API 是：
+### OpenAI
 
-- `POST https://api.telegram.org/bot<TOKEN>/sendMessage`
+热点文案生成默认接 OpenAI Responses API，模型默认值是 `gpt-5.4`。
 
-你需要保证：
+本地：
 
-- 机器人由 `@BotFather` 创建并可用
-- 目标用户或群已经和机器人产生过一次会话
-- `chatId` 真实可用
+```bash
+set OPENAI_API_KEY=你的_openai_api_key
+node server.js
+```
+
+Cloudflare：
+
+```bash
+npx wrangler secret put OPENAI_API_KEY
+```
+
+如果没有配置 `OPENAI_API_KEY`，系统会退回本地模板保底生成，方便先跑通流程。
+
+## 主要接口
+
+- `GET /api/dashboard`
+- `POST /api/history`
+- `POST /api/telegram/test`
+- `POST /api/trends/refresh`
+- `POST /api/trends/push`
+- `POST /api/cron/daily`
+- `POST /api/cron/trends`
 
 ## Cloudflare 部署
 
-这个项目已经补好了 Cloudflare Worker 版本：
+- `src/worker.js`: Worker API
+- `src/trend-service.js`: 热点抓取与 OpenAI 生成
+- `public/`: 静态页面
+- `wrangler.toml`: Worker 配置
 
-- `src/worker.js`: Cloudflare Worker API
-- `wrangler.toml`: Cloudflare 部署配置
-- `public/`: 作为静态资源直接托管
-
-### 常用命令
+常用命令：
 
 ```bash
 npx wrangler login
 npx wrangler deploy
 ```
 
-### 部署结果
+当前定时策略：
 
-- 静态页面会直接在 Cloudflare 上提供
-- `/api/*` 会由 Worker 处理
-- 设置和联系记录会写入 KV
-- 每天 `12:00 UTC` 会触发一次 cron
-  - 对应东京 `21:00`
-  - 对应中国 `20:00`
+- 每 6 小时刷新一次热点
+- 是否自动把热点摘要推到 Telegram，由页面设置里的 `telegram.autoTrendPush` 控制
 
-## GitHub
+## 数据文件
 
-当前目录已经初始化为 git 仓库，可以直接：
+- `data/settings.json`
+- `data/history.json`
+- `data/delivery-log.json`
+- `data/trend-reports.json`
 
-```bash
-git add .
-git commit -m "feat: switch notification to telegram"
-git push
-```
+## 说明
+
+- 抖音、知乎属于强反爬平台，所以实现采用“能抓则抓，抓不到就优雅降级”的策略
+- B 站榜单和 YouTube trending 通常最稳定
+- 真实线上效果取决于源站访问情况、地区限制和 OpenAI / Telegram 密钥是否已配置

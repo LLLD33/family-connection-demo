@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
 const { defaultSettings, defaultHistory } = require("./defaults");
+const { generateTrendReport, buildTrendTelegramMessage } = require("./trend-service");
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 3000);
@@ -12,12 +13,14 @@ const DATA_DIR = path.join(ROOT, "data");
 const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 const DELIVERY_FILE = path.join(DATA_DIR, "delivery-log.json");
+const TREND_REPORTS_FILE = path.join(DATA_DIR, "trend-reports.json");
 
 ensureDir(DATA_DIR);
 ensureDir(PUBLIC_DIR);
 ensureFile(SETTINGS_FILE, defaultSettings);
 ensureFile(HISTORY_FILE, defaultHistory);
 ensureFile(DELIVERY_FILE, []);
+ensureFile(TREND_REPORTS_FILE, []);
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
@@ -41,6 +44,38 @@ function getNowIso() {
   return new Date().toISOString();
 }
 
+function getTodayIso() {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+}
+
+function getDayName(dateString) {
+  const date = dateString ? new Date(dateString) : new Date();
+  return date.toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Tokyo" });
+}
+
+function resolveTelegramConfig(settings) {
+  return {
+    ...settings.telegram,
+    botToken: settings.telegram.botToken || process.env.TELEGRAM_BOT_TOKEN || ""
+  };
+}
+
+function resolveOpenAIConfig(settings) {
+  return {
+    ...settings.openai,
+    apiKey: process.env.OPENAI_API_KEY || ""
+  };
+}
+
+function getSettings() {
+  return mergeSettings(defaultSettings, readJson(SETTINGS_FILE));
+}
+
 function redactSettings(settings) {
   return {
     ...settings,
@@ -48,14 +83,11 @@ function redactSettings(settings) {
       ...settings.telegram,
       botToken: "",
       botTokenConfigured: Boolean(settings.telegram.botToken || process.env.TELEGRAM_BOT_TOKEN)
+    },
+    openai: {
+      ...settings.openai,
+      apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY)
     }
-  };
-}
-
-function resolveTelegramConfig(settings) {
-  return {
-    ...settings.telegram,
-    botToken: settings.telegram.botToken || process.env.TELEGRAM_BOT_TOKEN || ""
   };
 }
 
@@ -95,20 +127,6 @@ function parseBody(req) {
     });
     req.on("error", reject);
   });
-}
-
-function getDayName(dateString) {
-  const date = dateString ? new Date(dateString) : new Date();
-  return date.toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Tokyo" });
-}
-
-function getTodayIso() {
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date());
 }
 
 function summarizeLastRecord(history) {
@@ -151,11 +169,11 @@ function buildPromptPack(settings, history, targetDate) {
   const starters = [
     `${profileName} 今天下班有点累，不过想到你们了。你们在 ${hometown} 今天过得怎么样？`,
     `${city} 这边今天有点小变化，你们今天吃什么了？`,
-    `我刚忙完，突然想起最近都没好好问你们。家里今天有什么新鲜事吗？`
+    "我刚忙完，突然想起最近都没好好问你们。家里今天有什么新鲜事吗？"
   ];
 
   const deeperPrompts = [
-    `最近有没有哪里不太舒服？如果有的话我可以顺手帮你们查查怎么调理。`,
+    "最近有没有哪里不太舒服？如果有的话我可以顺手帮你们查查怎么调理。",
     `${fatherName} 最近上课或者安排多不多，累不累？`,
     `${motherName} 最近有没有和朋友出去走走或者吃个饭？`
   ];
@@ -163,7 +181,7 @@ function buildPromptPack(settings, history, targetDate) {
   const askForHelpPrompts = [
     `${motherName}，你上次说的那个家常菜到底怎么做来着？我这周想试一下。`,
     `${fatherName}，你以前工作累的时候一般怎么缓过来的？我最近也想学学。`,
-    `我最近想把作息调整规律一点，你们以前是怎么坚持下来的？`
+    "我最近想把作息调整规律一点，你们以前是怎么坚持下来的？"
   ];
 
   const fragments = [
@@ -206,7 +224,7 @@ function sanitizeHistoryRecord(input) {
   };
 }
 
-function buildTelegramMessage(promptPack, settings) {
+function buildFamilyTelegramMessage(promptPack, settings) {
   return [
     "*亲情联系提醒*",
     `日期：${promptPack.date} (${promptPack.dayName})`,
@@ -221,24 +239,27 @@ function buildTelegramMessage(promptPack, settings) {
 
 function appendDeliveryLog(entry) {
   const logs = readJson(DELIVERY_FILE);
-  logs.unshift({
-    id: `delivery_${Date.now()}`,
-    createdAt: getNowIso(),
-    ...entry
-  });
-  writeJson(DELIVERY_FILE, logs.slice(0, 20));
-  return logs.slice(0, 20);
+  const next = [
+    {
+      id: `delivery_${Date.now()}`,
+      createdAt: getNowIso(),
+      ...entry
+    },
+    ...logs
+  ].slice(0, 40);
+  writeJson(DELIVERY_FILE, next);
+  return next;
 }
 
-async function sendTelegramMessage(settings, promptPack, trigger = "manual") {
+async function sendTelegramText(settings, text, trigger, kind) {
   const telegram = resolveTelegramConfig(settings);
-  const text = buildTelegramMessage(promptPack, settings);
 
   if (!telegram.enabled || telegram.mode === "mock") {
-    const history = appendDeliveryLog({
+    const deliveryHistory = appendDeliveryLog({
       ok: true,
       mode: "mock",
       trigger,
+      kind,
       chatId: telegram.chatId || "",
       preview: text
     });
@@ -247,17 +268,17 @@ async function sendTelegramMessage(settings, promptPack, trigger = "manual") {
       mode: "mock",
       message: "当前为 mock 模式，未真实发送 Telegram 消息。",
       payload: { chatId: telegram.chatId, text },
-      deliveryHistory: history
+      deliveryHistory
     };
   }
 
-  const required = ["botToken", "chatId"];
-  const missing = required.filter((key) => !telegram[key]);
+  const missing = ["botToken", "chatId"].filter((key) => !telegram[key]);
   if (missing.length) {
-    const history = appendDeliveryLog({
+    const deliveryHistory = appendDeliveryLog({
       ok: false,
       mode: telegram.mode,
       trigger,
+      kind,
       chatId: telegram.chatId || "",
       preview: text,
       error: `缺少 Telegram 配置：${missing.join(", ")}`
@@ -266,7 +287,7 @@ async function sendTelegramMessage(settings, promptPack, trigger = "manual") {
       ok: false,
       mode: telegram.mode,
       message: `缺少 Telegram 配置：${missing.join(", ")}`,
-      deliveryHistory: history
+      deliveryHistory
     };
   }
 
@@ -283,10 +304,11 @@ async function sendTelegramMessage(settings, promptPack, trigger = "manual") {
 
   const result = await response.json();
   const ok = response.ok && result.ok === true;
-  const history = appendDeliveryLog({
+  const deliveryHistory = appendDeliveryLog({
     ok,
     mode: telegram.mode,
     trigger,
+    kind,
     chatId: telegram.chatId,
     preview: text,
     messageId: result.result?.message_id || null,
@@ -298,8 +320,16 @@ async function sendTelegramMessage(settings, promptPack, trigger = "manual") {
     mode: telegram.mode,
     message: result.description || (ok ? "发送完成" : "发送失败"),
     detail: result,
-    deliveryHistory: history
+    deliveryHistory
   };
+}
+
+async function sendFamilyTelegram(settings, promptPack, trigger) {
+  return sendTelegramText(settings, buildFamilyTelegramMessage(promptPack, settings), trigger, "family");
+}
+
+async function sendTrendTelegram(settings, report, trigger) {
+  return sendTelegramText(settings, buildTrendTelegramMessage(report), trigger, "trend");
 }
 
 function serveStatic(reqPath, res) {
@@ -309,6 +339,7 @@ function serveStatic(reqPath, res) {
   if (!fs.existsSync(normalized) || fs.statSync(normalized).isDirectory()) {
     return sendText(res, 404, "Not found", "text/plain; charset=utf-8");
   }
+
   const ext = path.extname(normalized).toLowerCase();
   const contentType = {
     ".html": "text/html; charset=utf-8",
@@ -316,7 +347,39 @@ function serveStatic(reqPath, res) {
     ".js": "application/javascript; charset=utf-8",
     ".json": "application/json; charset=utf-8"
   }[ext] || "application/octet-stream";
+
   sendText(res, 200, fs.readFileSync(normalized), contentType);
+}
+
+async function refreshTrendReports(settings, trigger) {
+  const reports = readJson(TREND_REPORTS_FILE);
+  const report = await generateTrendReport(fetch, settings, {
+    trigger,
+    openAiApiKey: resolveOpenAIConfig(settings).apiKey
+  });
+  const nextReports = [report, ...reports].slice(0, 20);
+  writeJson(TREND_REPORTS_FILE, nextReports);
+  return {
+    report,
+    history: nextReports
+  };
+}
+
+function mergeSettings(current, body) {
+  return {
+    ...current,
+    ...body,
+    profile: { ...current.profile, ...(body.profile || {}) },
+    parents: { ...current.parents, ...(body.parents || {}) },
+    cadence: { ...current.cadence, ...(body.cadence || {}) },
+    telegram: {
+      ...current.telegram,
+      ...(body.telegram || {}),
+      botToken: body.telegram?.botToken ? body.telegram.botToken : current.telegram.botToken
+    },
+    trends: { ...current.trends, ...(body.trends || {}) },
+    openai: { ...current.openai, ...(body.openai || {}) }
+  };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -325,24 +388,13 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && pathname === "/api/settings") {
-      return sendJson(res, 200, redactSettings(readJson(SETTINGS_FILE)));
+      return sendJson(res, 200, redactSettings(getSettings()));
     }
 
     if (req.method === "POST" && pathname === "/api/settings") {
       const body = await parseBody(req);
-      const current = readJson(SETTINGS_FILE);
-      const next = {
-        ...current,
-        ...body,
-        profile: { ...current.profile, ...(body.profile || {}) },
-        parents: { ...current.parents, ...(body.parents || {}) },
-        cadence: { ...current.cadence, ...(body.cadence || {}) },
-        telegram: {
-          ...current.telegram,
-          ...(body.telegram || {}),
-          botToken: body.telegram?.botToken ? body.telegram.botToken : current.telegram.botToken
-        }
-      };
+      const current = getSettings();
+      const next = mergeSettings(current, body);
       writeJson(SETTINGS_FILE, next);
       return sendJson(res, 200, { ok: true, settings: redactSettings(next) });
     }
@@ -356,9 +408,9 @@ const server = http.createServer(async (req, res) => {
       if (!body.summary) return sendJson(res, 400, { ok: false, message: "summary 为必填" });
       const history = readJson(HISTORY_FILE);
       const nextRecord = sanitizeHistoryRecord(body);
-      history.unshift(nextRecord);
-      writeJson(HISTORY_FILE, history.slice(0, 50));
-      return sendJson(res, 200, { ok: true, record: nextRecord, history: history.slice(0, 50) });
+      const nextHistory = [nextRecord, ...history].slice(0, 50);
+      writeJson(HISTORY_FILE, nextHistory);
+      return sendJson(res, 200, { ok: true, record: nextRecord, history: nextHistory });
     }
 
     if (req.method === "GET" && pathname === "/api/delivery-log") {
@@ -366,32 +418,92 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && pathname === "/api/dashboard") {
-      const settings = readJson(SETTINGS_FILE);
+      const settings = getSettings();
       const history = readJson(HISTORY_FILE);
+      const trendHistory = readJson(TREND_REPORTS_FILE);
       const date = parsedUrl.searchParams.get("date") || getTodayIso();
       return sendJson(res, 200, {
         settings: redactSettings(settings),
         promptPack: buildPromptPack(settings, history, date),
         history,
-        deliveryHistory: readJson(DELIVERY_FILE)
+        deliveryHistory: readJson(DELIVERY_FILE),
+        latestTrendReport: trendHistory[0] || null,
+        trendHistory
+      });
+    }
+
+    if (req.method === "GET" && pathname === "/api/trends") {
+      const settings = getSettings();
+      const history = readJson(TREND_REPORTS_FILE);
+      return sendJson(res, 200, {
+        settings: redactSettings(settings),
+        latestReport: history[0] || null,
+        history
+      });
+    }
+
+    if (req.method === "POST" && pathname === "/api/trends/refresh") {
+      const settings = getSettings();
+      const result = await refreshTrendReports(settings, "manual");
+      let telegram = null;
+      if (settings.telegram.autoTrendPush) {
+        telegram = await sendTrendTelegram(settings, result.report, "manual");
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        report: result.report,
+        history: result.history,
+        telegram
+      });
+    }
+
+    if (req.method === "POST" && pathname === "/api/trends/push") {
+      const settings = getSettings();
+      let history = readJson(TREND_REPORTS_FILE);
+      let report = history[0];
+      if (!report) {
+        const refreshed = await refreshTrendReports(settings, "manual");
+        history = refreshed.history;
+        report = refreshed.report;
+      }
+      const telegram = await sendTrendTelegram(settings, report, "manual");
+      return sendJson(res, 200, {
+        ok: true,
+        report,
+        history,
+        telegram
       });
     }
 
     if (req.method === "POST" && pathname === "/api/telegram/test") {
-      const settings = readJson(SETTINGS_FILE);
+      const settings = getSettings();
       const history = readJson(HISTORY_FILE);
       const promptPack = buildPromptPack(settings, history, getTodayIso());
-      return sendJson(res, 200, await sendTelegramMessage(settings, promptPack, "manual"));
+      return sendJson(res, 200, await sendFamilyTelegram(settings, promptPack, "manual"));
     }
 
     if (req.method === "POST" && pathname === "/api/cron/daily") {
-      const settings = readJson(SETTINGS_FILE);
+      const settings = getSettings();
       const history = readJson(HISTORY_FILE);
       const promptPack = buildPromptPack(settings, history, getTodayIso());
       return sendJson(res, 200, {
         ok: true,
         promptPack,
-        telegram: await sendTelegramMessage(settings, promptPack, "scheduled")
+        telegram: await sendFamilyTelegram(settings, promptPack, "scheduled")
+      });
+    }
+
+    if (req.method === "POST" && pathname === "/api/cron/trends") {
+      const settings = getSettings();
+      const result = await refreshTrendReports(settings, "scheduled");
+      const telegram = settings.telegram.autoTrendPush
+        ? await sendTrendTelegram(settings, result.report, "scheduled")
+        : null;
+      return sendJson(res, 200, {
+        ok: true,
+        report: result.report,
+        history: result.history,
+        telegram
       });
     }
 
@@ -410,7 +522,7 @@ function startServer(port = PORT, host = HOST) {
     server.once("error", reject);
     server.listen(port, host, () => {
       server.removeListener("error", reject);
-      console.log(`Family connection demo running at http://${host}:${port}`);
+      console.log(`Family hot news assistant running at http://${host}:${port}`);
       resolve(server);
     });
   });

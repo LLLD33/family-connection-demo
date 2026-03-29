@@ -15,4 +15,4 @@ preview_id = "749a5081ac6441949f40b4f149ed32d7"
 enabled = true
 
 [triggers]
-crons = ["0 12 * * *"]
+crons = ["0 */6 * * *"]

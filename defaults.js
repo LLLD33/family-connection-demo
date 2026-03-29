@@ -24,7 +24,17 @@ const defaultSettings = {
     enabled: false,
     mode: "mock",
     chatId: "",
-    parseMode: "Markdown"
+    parseMode: "Markdown",
+    autoTrendPush: false
+  },
+  trends: {
+    refreshHours: 6,
+    sourceLimit: 6,
+    scriptCount: 3
+  },
+  openai: {
+    model: "gpt-5.4",
+    reasoningEffort: "medium"
   }
 };
 

@@ -2,7 +2,9 @@ const state = {
   dashboard: null,
   settings: null,
   history: [],
-  deliveryHistory: []
+  deliveryHistory: [],
+  latestTrendReport: null,
+  trendHistory: []
 };
 
 async function request(url, options = {}) {
@@ -20,7 +22,7 @@ function showToast(message) {
   toast.textContent = message;
   toast.classList.remove("hidden");
   window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => toast.classList.add("hidden"), 2400);
+  showToast.timer = window.setTimeout(() => toast.classList.add("hidden"), 2600);
 }
 
 function setDeepValue(target, path, value) {
@@ -36,6 +38,13 @@ function setDeepValue(target, path, value) {
   });
 }
 
+function formatDateTime(value) {
+  if (!value) return "未生成";
+  return new Date(value).toLocaleString("zh-CN", {
+    hour12: false
+  });
+}
+
 function fillSettingsForm(settings) {
   const form = document.getElementById("settingsForm");
   Array.from(form.elements).forEach((field) => {
@@ -45,6 +54,7 @@ function fillSettingsForm(settings) {
     field.value = String(value);
   });
   document.getElementById("botTokenStatus").value = settings.telegram.botTokenConfigured ? "已配置" : "未配置";
+  document.getElementById("openAiStatus").value = settings.openai.apiKeyConfigured ? "已配置" : "未配置";
 }
 
 function renderDeliveryHistory() {
@@ -54,13 +64,13 @@ function renderDeliveryHistory() {
 
   if (!state.deliveryHistory.length) {
     deliveryList.innerHTML = '<div class="history-item"><p>还没有发送记录。</p></div>';
-    sendStatus.textContent = "最近一次发送状态会显示在这里。";
+    sendStatus.textContent = "Telegram 发送状态会显示在这里。";
     return;
   }
 
   const latest = state.deliveryHistory[0];
   sendStatus.textContent = latest.ok
-    ? `最近一次发送成功：${new Date(latest.createdAt).toLocaleString()}`
+    ? `最近一次${latest.kind === "trend" ? "热点" : "亲情"}发送成功：${formatDateTime(latest.createdAt)}`
     : `最近一次发送失败：${latest.error || "未知错误"}`;
 
   state.deliveryHistory.forEach((item) => {
@@ -68,9 +78,10 @@ function renderDeliveryHistory() {
     card.className = "history-item";
 
     const summary = document.createElement("p");
+    const kindLabel = item.kind === "trend" ? "热点摘要" : "亲情提醒";
     summary.textContent = item.ok
-      ? `${item.trigger === "scheduled" ? "定时发送" : "手动发送"}已完成`
-      : `${item.trigger === "scheduled" ? "定时发送" : "手动发送"}失败`;
+      ? `${kindLabel} · ${item.trigger === "scheduled" ? "定时发送" : "手动发送"}已完成`
+      : `${kindLabel} · ${item.trigger === "scheduled" ? "定时发送" : "手动发送"}失败`;
 
     const detail = document.createElement("p");
     detail.className = "muted";
@@ -78,26 +89,26 @@ function renderDeliveryHistory() {
 
     const meta = document.createElement("div");
     meta.className = "history-meta";
-    meta.textContent = `${new Date(item.createdAt).toLocaleString()} · ${item.mode}`;
+    meta.textContent = `${formatDateTime(item.createdAt)} · ${item.mode}`;
 
     card.append(summary, detail, meta);
     deliveryList.appendChild(card);
   });
 }
 
-function renderDashboard() {
+function renderFamilyDashboard() {
   if (!state.dashboard) return;
   const { promptPack, settings } = state.dashboard;
 
   document.getElementById("todayDate").textContent = promptPack.date;
   document.getElementById("topicSummary").textContent = promptPack.topic;
-  document.getElementById("heroTitle").textContent = `${promptPack.dayName} 的联系节奏已经帮你排好了`;
-  document.getElementById("heroSummary").textContent = `${promptPack.summary} 今天建议以“${promptPack.topic}”为主轴，保持自然、轻量、有回应感。`;
   document.getElementById("dayTag").textContent = promptPack.dayName;
   document.getElementById("lastSummary").textContent = promptPack.summary;
-  document.getElementById("telegramMode").textContent = settings.telegram.enabled
-    ? `当前为 ${settings.telegram.mode} 模式`
-    : "当前未启用真实 Telegram 发送";
+
+  if (!state.latestTrendReport) {
+    document.getElementById("heroTitle").textContent = `${promptPack.dayName} 的联系节奏已经帮你排好了`;
+    document.getElementById("heroSummary").textContent = `${promptPack.summary} 今天建议先以“${promptPack.topic}”切入，等你刷新完热点，再顺手把一个新话题带给爸妈。`;
+  }
 
   const checklist = document.getElementById("checklist");
   checklist.innerHTML = "";
@@ -133,6 +144,10 @@ function renderDashboard() {
     row.append(text, button);
     suggestionList.appendChild(row);
   });
+
+  document.getElementById("trendRefreshInfo").textContent = state.latestTrendReport
+    ? `最近一轮：${formatDateTime(state.latestTrendReport.createdAt)}`
+    : `默认建议 ${settings.trends.refreshHours} 小时更新一轮热点`;
 }
 
 function renderHistory() {
@@ -154,35 +169,246 @@ function renderHistory() {
   });
 }
 
+function renderSourceBoard(report) {
+  const sourceBoard = document.getElementById("sourceBoard");
+  sourceBoard.innerHTML = "";
+
+  if (!report) {
+    sourceBoard.innerHTML = '<div class="history-item"><p>还没有热点报告，先点“刷新最新热点并生成 3 条文案”。</p></div>';
+    return;
+  }
+
+  report.sourceStatus.forEach((status) => {
+    const card = document.createElement("article");
+    card.className = "source-card";
+
+    const header = document.createElement("div");
+    header.className = "source-card-header";
+
+    const title = document.createElement("h4");
+    title.textContent = `${status.sourceLabel}`;
+
+    const badge = document.createElement("span");
+    badge.className = `pill ${status.ok ? "ok" : "warn"}`;
+    badge.textContent = status.ok ? `${status.count} 条` : "抓取失败";
+
+    header.append(title, badge);
+
+    const note = document.createElement("p");
+    note.className = "muted";
+    note.textContent = status.message;
+
+    const list = document.createElement("div");
+    list.className = "source-topic-list";
+
+    const topics = report.sourceTopics[status.source] || [];
+    if (!topics.length) {
+      const empty = document.createElement("div");
+      empty.className = "history-item";
+      empty.textContent = "这一轮没有拿到可用标题。";
+      list.appendChild(empty);
+    } else {
+      topics.forEach((topic) => {
+        const item = document.createElement("a");
+        item.className = "source-topic-item";
+        item.href = topic.url;
+        item.target = "_blank";
+        item.rel = "noreferrer";
+        item.textContent = `#${topic.rank} ${topic.title}`;
+        list.appendChild(item);
+      });
+    }
+
+    card.append(header, note, list);
+    sourceBoard.appendChild(card);
+  });
+}
+
+function renderScriptList(report) {
+  const scriptList = document.getElementById("scriptList");
+  scriptList.innerHTML = "";
+
+  if (!report || !report.scripts?.length) {
+    scriptList.innerHTML = '<div class="history-item"><p>还没有口播文案，先刷新一轮热点。</p></div>';
+    return;
+  }
+
+  report.scripts.forEach((item, index) => {
+    const card = document.createElement("div");
+    card.className = "script-card";
+
+    const topRow = document.createElement("div");
+    topRow.className = "script-card-header";
+
+    const titleWrap = document.createElement("div");
+    const title = document.createElement("h4");
+    title.textContent = `${index + 1}. ${item.title}`;
+    const tags = document.createElement("p");
+    tags.className = "muted";
+    tags.textContent = (item.sourceMix || []).join(" / ") || "跨平台";
+    titleWrap.append(title, tags);
+
+    const button = document.createElement("button");
+    button.className = "copy-button";
+    button.textContent = "复制整条";
+    button.addEventListener("click", async () => {
+      const content = [
+        item.title,
+        item.hook,
+        item.spokenScript,
+        `带爸妈聊：${item.conversationStarter}`,
+        `适合原因：${item.parentAngle}`
+      ].join("\n");
+      await navigator.clipboard.writeText(content);
+      showToast("文案已复制");
+    });
+
+    topRow.append(titleWrap, button);
+
+    const hotReason = document.createElement("p");
+    hotReason.className = "muted";
+    hotReason.textContent = item.hotReason;
+
+    const hook = document.createElement("p");
+    hook.className = "script-block";
+    hook.innerHTML = `<strong>开头：</strong>${item.hook}`;
+
+    const spokenScript = document.createElement("p");
+    spokenScript.className = "script-block";
+    spokenScript.innerHTML = `<strong>口播稿：</strong>${item.spokenScript}`;
+
+    const conversation = document.createElement("p");
+    conversation.className = "script-block";
+    conversation.innerHTML = `<strong>带爸妈聊：</strong>${item.conversationStarter}`;
+
+    const angle = document.createElement("p");
+    angle.className = "script-block";
+    angle.innerHTML = `<strong>为什么适合聊：</strong>${item.parentAngle}`;
+
+    card.append(topRow, hotReason, hook, spokenScript, conversation, angle);
+    scriptList.appendChild(card);
+  });
+}
+
+function renderTrendHistory() {
+  const trendHistoryList = document.getElementById("trendHistoryList");
+  trendHistoryList.innerHTML = "";
+
+  if (!state.trendHistory.length) {
+    trendHistoryList.innerHTML = '<div class="history-item"><p>还没有热点生成历史。</p></div>';
+    return;
+  }
+
+  state.trendHistory.forEach((report) => {
+    const card = document.createElement("div");
+    card.className = "history-item";
+
+    const title = document.createElement("p");
+    title.textContent = report.scripts?.length
+      ? report.scripts.map((item, index) => `${index + 1}. ${item.title}`).join(" / ")
+      : "这一轮没有拿到可用文案";
+
+    const detail = document.createElement("p");
+    detail.className = "muted";
+    detail.textContent = `${report.ai.mode === "openai" ? report.ai.model : "本地模板"} · ${report.summary || "已完成生成"}`;
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    meta.textContent = `${formatDateTime(report.createdAt)} · ${report.trigger === "scheduled" ? "定时" : "手动"} · ${report.topicCount || 0} 条候选`;
+
+    card.append(title, detail, meta);
+    trendHistoryList.appendChild(card);
+  });
+}
+
+function renderTrendPanel() {
+  const report = state.latestTrendReport;
+  const trendMetaTag = document.getElementById("trendMetaTag");
+  const trendSummary = document.getElementById("trendSummary");
+  const heroTitle = document.getElementById("heroTitle");
+  const heroSummary = document.getElementById("heroSummary");
+  const aiModeStatus = document.getElementById("aiModeStatus");
+
+  if (!report) {
+    trendMetaTag.textContent = "等待首次生成";
+    trendSummary.textContent = "点击刷新后，这里会展示本轮热点摘要、AI 模式和抓取成功情况。";
+    aiModeStatus.textContent = state.settings?.openai?.apiKeyConfigured
+      ? `OpenAI 已就绪，默认模型 ${state.settings.openai.model}`
+      : "OpenAI 还没配置，首次生成会先用本地模板保底。";
+    renderSourceBoard(null);
+    renderScriptList(null);
+    renderTrendHistory();
+    return;
+  }
+
+  trendMetaTag.textContent = `${report.ai.mode === "openai" ? report.ai.model : "本地模板"} · ${report.topicCount} 条候选`;
+  trendSummary.textContent = report.summary || "本轮热点已经整理完成。";
+  heroTitle.textContent = "这一轮最值得和爸妈聊的 3 个热点已经备好";
+  heroSummary.textContent = `${report.summary || "热点已整理完成。"} 这轮共抓到 ${report.topicCount} 个候选话题，建议你优先挑一条最轻松的先开口。`;
+  aiModeStatus.textContent = report.ai.mode === "openai"
+    ? `当前用 ${report.ai.model} 生成，${report.ai.message}`
+    : `当前是本地保底生成，原因：${report.ai.message}`;
+
+  renderSourceBoard(report);
+  renderScriptList(report);
+  renderTrendHistory();
+}
+
+function renderAll() {
+  renderFamilyDashboard();
+  renderHistory();
+  renderDeliveryHistory();
+  renderTrendPanel();
+  fillSettingsForm(state.settings);
+}
+
 async function loadDashboard() {
   const data = await request("/api/dashboard");
   state.dashboard = data;
   state.settings = data.settings;
   state.history = data.history;
   state.deliveryHistory = data.deliveryHistory || [];
-  renderDashboard();
-  renderHistory();
-  renderDeliveryHistory();
-  fillSettingsForm(data.settings);
+  state.latestTrendReport = data.latestTrendReport || null;
+  state.trendHistory = data.trendHistory || [];
+  renderAll();
+}
+
+function normalizeSettingValue(key, value) {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (["cadence.askForHelpEvery", "trends.refreshHours", "trends.sourceLimit", "trends.scriptCount"].includes(key)) {
+    return Number(value || 0);
+  }
+  return value;
 }
 
 function bindEvents() {
   document.getElementById("refreshBtn").addEventListener("click", async () => {
     await loadDashboard();
-    showToast("今日建议已刷新");
+    showToast("今日联系建议已刷新");
   });
 
   document.getElementById("runCronBtn").addEventListener("click", async () => {
     const result = await request("/api/cron/daily", { method: "POST" });
-    state.deliveryHistory = result.telegram?.deliveryHistory || state.deliveryHistory;
-    renderDeliveryHistory();
-    showToast(result.telegram?.message || "已执行每日发送");
+    await loadDashboard();
+    showToast(result.telegram?.message || "已执行每日提醒");
+  });
+
+  document.getElementById("refreshTrendsBtn").addEventListener("click", async () => {
+    const result = await request("/api/trends/refresh", { method: "POST" });
+    await loadDashboard();
+    showToast(result.report?.ai?.mode === "openai" ? "热点和 AI 文案都刷新好了" : (result.report?.ai?.message || "热点已刷新"));
+  });
+
+  document.getElementById("pushTrendsBtn").addEventListener("click", async () => {
+    const result = await request("/api/trends/push", { method: "POST" });
+    await loadDashboard();
+    showToast(result.telegram?.message || "热点摘要已推送");
   });
 
   document.getElementById("sendTelegramBtn").addEventListener("click", async () => {
     const result = await request("/api/telegram/test", { method: "POST" });
-    state.deliveryHistory = result.deliveryHistory || state.deliveryHistory;
-    renderDeliveryHistory();
+    await loadDashboard();
     showToast(result.message || "测试发送完成");
   });
 
@@ -201,12 +427,8 @@ function bindEvents() {
     const form = new FormData(event.currentTarget);
     const payload = {};
     for (const [key, value] of form.entries()) {
-      if (key === "botTokenStatus") continue;
-      let normalized = value;
-      if (value === "true") normalized = true;
-      if (value === "false") normalized = false;
-      if (key === "cadence.askForHelpEvery") normalized = Number(value || 3);
-      setDeepValue(payload, key, normalized);
+      if (["botTokenStatus", "openAiStatus"].includes(key)) continue;
+      setDeepValue(payload, key, normalizeSettingValue(key, value));
     }
     await request("/api/settings", { method: "POST", body: JSON.stringify(payload) });
     await loadDashboard();

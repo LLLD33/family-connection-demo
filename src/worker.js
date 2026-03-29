@@ -1,8 +1,10 @@
 import { defaultHistory, defaultSettings } from "./defaults.js";
+import { buildTrendTelegramMessage, generateTrendReport } from "./trend-service.js";
 
 const SETTINGS_KEY = "settings";
 const HISTORY_KEY = "history";
 const DELIVERY_KEY = "delivery-log";
+const TREND_REPORTS_KEY = "trend-reports";
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -18,35 +20,6 @@ function getNowIso() {
   return new Date().toISOString();
 }
 
-function redactSettings(settings, env) {
-  return {
-    ...settings,
-    telegram: {
-      ...settings.telegram,
-      botToken: "",
-      botTokenConfigured: Boolean(settings.telegram.botToken || env.TELEGRAM_BOT_TOKEN)
-    }
-  };
-}
-
-function resolveTelegramConfig(settings, env) {
-  return {
-    ...settings.telegram,
-    botToken: settings.telegram.botToken || env.TELEGRAM_BOT_TOKEN || ""
-  };
-}
-
-async function readStore(env, key, fallbackValue) {
-  if (!env.APP_DATA) return structuredClone(fallbackValue);
-  const raw = await env.APP_DATA.get(key, "json");
-  return raw || structuredClone(fallbackValue);
-}
-
-async function writeStore(env, key, value) {
-  if (!env.APP_DATA) return;
-  await env.APP_DATA.put(key, JSON.stringify(value));
-}
-
 function getTodayIso() {
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Tokyo",
@@ -59,6 +32,46 @@ function getTodayIso() {
 function getDayName(dateString) {
   const date = dateString ? new Date(dateString) : new Date();
   return date.toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Tokyo" });
+}
+
+function resolveTelegramConfig(settings, env) {
+  return {
+    ...settings.telegram,
+    botToken: settings.telegram.botToken || env.TELEGRAM_BOT_TOKEN || ""
+  };
+}
+
+function resolveOpenAIConfig(settings, env) {
+  return {
+    ...settings.openai,
+    apiKey: env.OPENAI_API_KEY || ""
+  };
+}
+
+function redactSettings(settings, env) {
+  return {
+    ...settings,
+    telegram: {
+      ...settings.telegram,
+      botToken: "",
+      botTokenConfigured: Boolean(settings.telegram.botToken || env.TELEGRAM_BOT_TOKEN)
+    },
+    openai: {
+      ...settings.openai,
+      apiKeyConfigured: Boolean(env.OPENAI_API_KEY)
+    }
+  };
+}
+
+async function readStore(env, key, fallbackValue) {
+  if (!env.APP_DATA) return structuredClone(fallbackValue);
+  const raw = await env.APP_DATA.get(key, "json");
+  return raw || structuredClone(fallbackValue);
+}
+
+async function writeStore(env, key, value) {
+  if (!env.APP_DATA) return;
+  await env.APP_DATA.put(key, JSON.stringify(value));
 }
 
 function summarizeLastRecord(history) {
@@ -152,7 +165,9 @@ function mergeSettings(current, body) {
     profile: { ...current.profile, ...(body.profile || {}) },
     parents: { ...current.parents, ...(body.parents || {}) },
     cadence: { ...current.cadence, ...(body.cadence || {}) },
-    telegram: { ...current.telegram, ...(body.telegram || {}) }
+    telegram: { ...current.telegram, ...(body.telegram || {}) },
+    trends: { ...current.trends, ...(body.trends || {}) },
+    openai: { ...current.openai, ...(body.openai || {}) }
   };
 }
 
@@ -167,7 +182,7 @@ function sanitizeHistoryRecord(input) {
   };
 }
 
-function buildTelegramMessage(promptPack, settings) {
+function buildFamilyTelegramMessage(promptPack, settings) {
   return [
     "*亲情联系提醒*",
     `日期：${promptPack.date} (${promptPack.dayName})`,
@@ -189,20 +204,20 @@ async function appendDeliveryLog(env, entry) {
       ...entry
     },
     ...logs
-  ].slice(0, 20);
+  ].slice(0, 40);
   await writeStore(env, DELIVERY_KEY, next);
   return next;
 }
 
-async function sendTelegramMessage(settings, env, promptPack, trigger = "manual") {
+async function sendTelegramText(settings, env, text, trigger, kind) {
   const telegram = resolveTelegramConfig(settings, env);
-  const text = buildTelegramMessage(promptPack, settings);
 
   if (!telegram.enabled || telegram.mode === "mock") {
     const deliveryHistory = await appendDeliveryLog(env, {
       ok: true,
       mode: "mock",
       trigger,
+      kind,
       chatId: telegram.chatId || "",
       preview: text
     });
@@ -215,13 +230,13 @@ async function sendTelegramMessage(settings, env, promptPack, trigger = "manual"
     };
   }
 
-  const required = ["botToken", "chatId"];
-  const missing = required.filter((key) => !telegram[key]);
+  const missing = ["botToken", "chatId"].filter((key) => !telegram[key]);
   if (missing.length) {
     const deliveryHistory = await appendDeliveryLog(env, {
       ok: false,
       mode: telegram.mode,
       trigger,
+      kind,
       chatId: telegram.chatId || "",
       preview: text,
       error: `缺少 Telegram 配置：${missing.join(", ")}`
@@ -251,6 +266,7 @@ async function sendTelegramMessage(settings, env, promptPack, trigger = "manual"
     ok,
     mode: telegram.mode,
     trigger,
+    kind,
     chatId: telegram.chatId,
     preview: text,
     messageId: result.result?.message_id || null,
@@ -266,10 +282,33 @@ async function sendTelegramMessage(settings, env, promptPack, trigger = "manual"
   };
 }
 
+async function sendFamilyTelegram(settings, env, promptPack, trigger) {
+  return sendTelegramText(settings, env, buildFamilyTelegramMessage(promptPack, settings), trigger, "family");
+}
+
+async function sendTrendTelegram(settings, env, report, trigger) {
+  return sendTelegramText(settings, env, buildTrendTelegramMessage(report), trigger, "trend");
+}
+
+async function refreshTrendReports(settings, env, trigger) {
+  const reports = await readStore(env, TREND_REPORTS_KEY, []);
+  const report = await generateTrendReport(fetch, settings, {
+    trigger,
+    openAiApiKey: resolveOpenAIConfig(settings, env).apiKey
+  });
+  const next = [report, ...reports].slice(0, 20);
+  await writeStore(env, TREND_REPORTS_KEY, next);
+  return {
+    report,
+    history: next
+  };
+}
+
 async function handleApi(request, env) {
   const url = new URL(request.url);
   const pathname = url.pathname;
-  const settings = await readStore(env, SETTINGS_KEY, defaultSettings);
+  const rawSettings = await readStore(env, SETTINGS_KEY, defaultSettings);
+  const settings = mergeSettings(defaultSettings, rawSettings);
   const history = await readStore(env, HISTORY_KEY, defaultHistory);
 
   if (request.method === "GET" && pathname === "/api/settings") {
@@ -303,22 +342,82 @@ async function handleApi(request, env) {
 
   if (request.method === "GET" && pathname === "/api/dashboard") {
     const date = url.searchParams.get("date") || getTodayIso();
+    const trendHistory = await readStore(env, TREND_REPORTS_KEY, []);
     return jsonResponse({
       settings: redactSettings(settings, env),
       promptPack: buildPromptPack(settings, history, date),
       history,
-      deliveryHistory: await readStore(env, DELIVERY_KEY, [])
+      deliveryHistory: await readStore(env, DELIVERY_KEY, []),
+      latestTrendReport: trendHistory[0] || null,
+      trendHistory
+    });
+  }
+
+  if (request.method === "GET" && pathname === "/api/trends") {
+    const trendHistory = await readStore(env, TREND_REPORTS_KEY, []);
+    return jsonResponse({
+      settings: redactSettings(settings, env),
+      latestReport: trendHistory[0] || null,
+      history: trendHistory
+    });
+  }
+
+  if (request.method === "POST" && pathname === "/api/trends/refresh") {
+    const refreshed = await refreshTrendReports(settings, env, "manual");
+    let telegram = null;
+    if (settings.telegram.autoTrendPush) {
+      telegram = await sendTrendTelegram(settings, env, refreshed.report, "manual");
+    }
+    return jsonResponse({
+      ok: true,
+      report: refreshed.report,
+      history: refreshed.history,
+      telegram
+    });
+  }
+
+  if (request.method === "POST" && pathname === "/api/trends/push") {
+    let trendHistory = await readStore(env, TREND_REPORTS_KEY, []);
+    let report = trendHistory[0];
+    if (!report) {
+      const refreshed = await refreshTrendReports(settings, env, "manual");
+      trendHistory = refreshed.history;
+      report = refreshed.report;
+    }
+    const telegram = await sendTrendTelegram(settings, env, report, "manual");
+    return jsonResponse({
+      ok: true,
+      report,
+      history: trendHistory,
+      telegram
     });
   }
 
   if (request.method === "POST" && pathname === "/api/telegram/test") {
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    return jsonResponse(await sendTelegramMessage(settings, env, promptPack, "manual"));
+    return jsonResponse(await sendFamilyTelegram(settings, env, promptPack, "manual"));
   }
 
   if (request.method === "POST" && pathname === "/api/cron/daily") {
     const promptPack = buildPromptPack(settings, history, getTodayIso());
-    return jsonResponse({ ok: true, promptPack, telegram: await sendTelegramMessage(settings, env, promptPack, "scheduled") });
+    return jsonResponse({
+      ok: true,
+      promptPack,
+      telegram: await sendFamilyTelegram(settings, env, promptPack, "scheduled")
+    });
+  }
+
+  if (request.method === "POST" && pathname === "/api/cron/trends") {
+    const refreshed = await refreshTrendReports(settings, env, "scheduled");
+    const telegram = settings.telegram.autoTrendPush
+      ? await sendTrendTelegram(settings, env, refreshed.report, "scheduled")
+      : null;
+    return jsonResponse({
+      ok: true,
+      report: refreshed.report,
+      history: refreshed.history,
+      telegram
+    });
   }
 
   return null;
@@ -341,9 +440,11 @@ export default {
   },
 
   async scheduled(_event, env) {
-    const settings = await readStore(env, SETTINGS_KEY, defaultSettings);
-    const history = await readStore(env, HISTORY_KEY, defaultHistory);
-    const promptPack = buildPromptPack(settings, history, getTodayIso());
-    await sendTelegramMessage(settings, env, promptPack, "scheduled");
+    const rawSettings = await readStore(env, SETTINGS_KEY, defaultSettings);
+    const settings = mergeSettings(defaultSettings, rawSettings);
+    const refreshed = await refreshTrendReports(settings, env, "scheduled");
+    if (settings.telegram.autoTrendPush) {
+      await sendTrendTelegram(settings, env, refreshed.report, "scheduled");
+    }
   }
 };

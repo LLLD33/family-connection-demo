@@ -1,0 +1,256 @@
+[
+  {
+    "id": "trend_1774787307895",
+    "createdAt": "2026-03-29T12:28:27.894Z",
+    "trigger": "manual",
+    "refreshHours": 6,
+    "ai": {
+      "ok": false,
+      "mode": "fallback",
+      "model": "gpt-5.4",
+      "message": "未配置 OPENAI_API_KEY，已使用本地模板生成。"
+    },
+    "summary": "当前没有 OpenAI 密钥，先用本地模板保底生成可聊话题。",
+    "sourceStatus": [
+      {
+        "source": "douyin",
+        "sourceLabel": "抖音",
+        "ok": false,
+        "count": 0,
+        "message": "抖音页面可访问，但没有解析出热点标题"
+      },
+      {
+        "source": "bilibili",
+        "sourceLabel": "B站",
+        "ok": false,
+        "count": 0,
+        "message": "B 站榜单为空"
+      },
+      {
+        "source": "zhihu",
+        "sourceLabel": "知乎",
+        "ok": true,
+        "count": 6,
+        "message": "已抓到知乎候选热点"
+      },
+      {
+        "source": "youtube",
+        "sourceLabel": "YouTube",
+        "ok": false,
+        "count": 0,
+        "message": "YouTube 匿名 trending 页面当前只返回搜索引导，没有可解析的视频标题"
+      }
+    ],
+    "sourceTopics": {
+      "douyin": [],
+      "bilibili": [],
+      "zhihu": [
+        {
+          "id": "zhihu_1774787306541_1",
+          "source": "zhihu",
+          "sourceLabel": "知乎",
+          "rank": 1,
+          "title": "泡馍为什么走不出西安",
+          "url": "https://www.zhihu.com/search?type=content&q=%E6%B3%A1%E9%A6%8D%E4%B8%BA%E4%BB%80%E4%B9%88%E8%B5%B0%E4%B8%8D%E5%87%BA%E8%A5%BF%E5%AE%89",
+          "meta": "知乎热榜候选"
+        },
+        {
+          "id": "zhihu_1774787306541_2",
+          "source": "zhihu",
+          "sourceLabel": "知乎",
+          "rank": 2,
+          "title": "郑钦文不敌萨巴伦卡",
+          "url": "https://www.zhihu.com/search?type=content&q=%E9%83%91%E9%92%A6%E6%96%87%E4%B8%8D%E6%95%8C%E8%90%A8%E5%B7%B4%E4%BC%A6%E5%8D%A1",
+          "meta": "知乎热榜候选"
+        },
+        {
+          "id": "zhihu_1774787306541_3",
+          "source": "zhihu",
+          "sourceLabel": "知乎",
+          "rank": 3,
+          "title": "C919还能成批生产吗",
+          "url": "https://www.zhihu.com/search?type=content&q=C919%E8%BF%98%E8%83%BD%E6%88%90%E6%89%B9%E7%94%9F%E4%BA%A7%E5%90%97",
+          "meta": "知乎热榜候选"
+        },
+        {
+          "id": "zhihu_1774787306541_4",
+          "source": "zhihu",
+          "sourceLabel": "知乎",
+          "rank": 4,
+          "title": "怎样才能叫做真正会科研的人",
+          "url": "https://www.zhihu.com/search?type=content&q=%E6%80%8E%E6%A0%B7%E6%89%8D%E8%83%BD%E5%8F%AB%E5%81%9A%E7%9C%9F%E6%AD%A3%E4%BC%9A%E7%A7%91%E7%A0%94%E7%9A%84%E4%BA%BA",
+          "meta": "知乎热榜候选"
+        },
+        {
+          "id": "zhihu_1774787306541_5",
+          "source": "zhihu",
+          "sourceLabel": "知乎",
+          "rank": 5,
+          "title": "用DeepSeek选股炒股可行吗",
+          "url": "https://www.zhihu.com/search?type=content&q=%E7%94%A8DeepSeek%E9%80%89%E8%82%A1%E7%82%92%E8%82%A1%E5%8F%AF%E8%A1%8C%E5%90%97",
+          "meta": "知乎热榜候选"
+        },
+        {
+          "id": "zhihu_1774787306541_6",
+          "source": "zhihu",
+          "sourceLabel": "知乎",
+          "rank": 6,
+          "title": "美国情报系统现在属于什么水平",
+          "url": "https://www.zhihu.com/search?type=content&q=%E7%BE%8E%E5%9B%BD%E6%83%85%E6%8A%A5%E7%B3%BB%E7%BB%9F%E7%8E%B0%E5%9C%A8%E5%B1%9E%E4%BA%8E%E4%BB%80%E4%B9%88%E6%B0%B4%E5%B9%B3",
+          "meta": "知乎热榜候选"
+        }
+      ],
+      "youtube": []
+    },
+    "scripts": [
+      {
+        "id": "fallback_1774787307895_1",
+        "title": "泡馍为什么走不出西安",
+        "hotReason": "知乎 排名前列，这类题目既有新鲜感，也容易顺手问到父母自己的看法。",
+        "hook": "今天我刷到一个挺火的：泡馍为什么走不出西安",
+        "spokenScript": "今天四个平台里我最想先和你们聊的是“泡馍为什么走不出西安”。它现在在 知乎 上热度很高，我看下来最大的感觉不是单纯热闹，而是它特别容易让人代入自己的生活和判断。我要是跟你们打电话，就会先用两三句把来龙去脉讲清楚，再顺手问一句“你们怎么看这件事”，这样话题就很自然地接起来了。",
+        "conversationStarter": "这个热点你们有刷到吗？ 我刚看到“泡馍为什么走不出西安”，第一反应就想听听你们的看法。",
+        "parentAngle": "先轻松复述热点，再问他们“你们怎么看”，不要一上来太严肃。",
+        "sourceMix": [
+          "知乎"
+        ],
+        "sourceUrls": [
+          "https://www.zhihu.com/search?type=content&q=%E6%B3%A1%E9%A6%8D%E4%B8%BA%E4%BB%80%E4%B9%88%E8%B5%B0%E4%B8%8D%E5%87%BA%E8%A5%BF%E5%AE%89"
+        ]
+      },
+      {
+        "id": "fallback_1774787307895_2",
+        "title": "郑钦文不敌萨巴伦卡",
+        "hotReason": "知乎 排名前列，这类题目既有新鲜感，也容易顺手问到父母自己的看法。",
+        "hook": "今天我刷到一个挺火的：郑钦文不敌萨巴伦卡",
+        "spokenScript": "今天四个平台里我最想先和你们聊的是“郑钦文不敌萨巴伦卡”。它现在在 知乎 上热度很高，我看下来最大的感觉不是单纯热闹，而是它特别容易让人代入自己的生活和判断。我要是跟你们打电话，就会先用两三句把来龙去脉讲清楚，再顺手问一句“你们怎么看这件事”，这样话题就很自然地接起来了。",
+        "conversationStarter": "这个热点你们有刷到吗？ 我刚看到“郑钦文不敌萨巴伦卡”，第一反应就想听听你们的看法。",
+        "parentAngle": "先轻松复述热点，再问他们“你们怎么看”，不要一上来太严肃。",
+        "sourceMix": [
+          "知乎"
+        ],
+        "sourceUrls": [
+          "https://www.zhihu.com/search?type=content&q=%E9%83%91%E9%92%A6%E6%96%87%E4%B8%8D%E6%95%8C%E8%90%A8%E5%B7%B4%E4%BC%A6%E5%8D%A1"
+        ]
+      },
+      {
+        "id": "fallback_1774787307895_3",
+        "title": "C919还能成批生产吗",
+        "hotReason": "知乎 排名前列，这类题目既有新鲜感，也容易顺手问到父母自己的看法。",
+        "hook": "今天我刷到一个挺火的：C919还能成批生产吗",
+        "spokenScript": "今天四个平台里我最想先和你们聊的是“C919还能成批生产吗”。它现在在 知乎 上热度很高，我看下来最大的感觉不是单纯热闹，而是它特别容易让人代入自己的生活和判断。我要是跟你们打电话，就会先用两三句把来龙去脉讲清楚，再顺手问一句“你们怎么看这件事”，这样话题就很自然地接起来了。",
+        "conversationStarter": "这个热点你们有刷到吗？ 我刚看到“C919还能成批生产吗”，第一反应就想听听你们的看法。",
+        "parentAngle": "先轻松复述热点，再问他们“你们怎么看”，不要一上来太严肃。",
+        "sourceMix": [
+          "知乎"
+        ],
+        "sourceUrls": [
+          "https://www.zhihu.com/search?type=content&q=C919%E8%BF%98%E8%83%BD%E6%88%90%E6%89%B9%E7%94%9F%E4%BA%A7%E5%90%97"
+        ]
+      }
+    ],
+    "topicCount": 6
+  },
+  {
+    "id": "trend_1774786240504",
+    "createdAt": "2026-03-29T12:10:40.504Z",
+    "trigger": "manual",
+    "refreshHours": 6,
+    "ai": {
+      "ok": false,
+      "mode": "fallback",
+      "model": "gpt-5.4",
+      "message": "这一轮没有从四个平台抓到可用标题，可能是源站限流或地区访问受限。"
+    },
+    "summary": "这一轮没有从四个平台抓到可用标题，可能是源站限流或地区访问受限。",
+    "sourceStatus": [
+      {
+        "source": "douyin",
+        "sourceLabel": "抖音",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      },
+      {
+        "source": "bilibili",
+        "sourceLabel": "B站",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      },
+      {
+        "source": "zhihu",
+        "sourceLabel": "知乎",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      },
+      {
+        "source": "youtube",
+        "sourceLabel": "YouTube",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      }
+    ],
+    "sourceTopics": {
+      "douyin": [],
+      "bilibili": [],
+      "zhihu": [],
+      "youtube": []
+    },
+    "scripts": [],
+    "topicCount": 0
+  },
+  {
+    "id": "trend_1774786167269",
+    "createdAt": "2026-03-29T12:09:27.269Z",
+    "trigger": "manual",
+    "refreshHours": 6,
+    "ai": {
+      "ok": false,
+      "mode": "fallback",
+      "model": "gpt-5.4",
+      "message": "未配置 OPENAI_API_KEY，已使用本地模板生成。"
+    },
+    "summary": "当前没有 OpenAI 密钥，先用本地模板保底生成可聊话题。",
+    "sourceStatus": [
+      {
+        "source": "douyin",
+        "sourceLabel": "抖音",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      },
+      {
+        "source": "bilibili",
+        "sourceLabel": "B站",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      },
+      {
+        "source": "zhihu",
+        "sourceLabel": "知乎",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      },
+      {
+        "source": "youtube",
+        "sourceLabel": "YouTube",
+        "ok": false,
+        "count": 0,
+        "message": "fetch failed"
+      }
+    ],
+    "sourceTopics": {
+      "douyin": [],
+      "bilibili": [],
+      "zhihu": [],
+      "youtube": []
+    },
+    "scripts": [],
+    "topicCount": 0
+  }
+]
